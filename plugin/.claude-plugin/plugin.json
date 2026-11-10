@@ -1,0 +1,7 @@
+{
+  "name": "archmap",
+  "description": "Keep the project's architecture map current: set it up, record changes as saves, and publish versions.",
+  "version": "0.3.0",
+  "author": { "name": "TTT Studios" },
+  "repository": "https://github.com/InnovsoftInc/archmap"
+}

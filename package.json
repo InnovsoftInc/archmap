@@ -1,0 +1,51 @@
+{
+  "name": "@tttstudios/archmap",
+  "version": "0.3.0",
+  "description": "An architecture map kept as files in your repo: categories, services, connections, database tables, personas and flows, versioned by sprint, viewable as a static site and updated by Claude.",
+  "type": "module",
+  "bin": {
+    "archmap": "./bin/archmap.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "viewer",
+    "templates",
+    "plugin",
+    ".claude-plugin",
+    "!src/__tests__"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "lint": "oxlint && eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.3.5",
+    "@typescript-eslint/parser": "^8.56.1",
+    "@vitest/coverage-istanbul": "^4.0.18",
+    "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import-x": "^4.16.1",
+    "eslint-plugin-prefer-arrow-functions": "^3.9.1",
+    "eslint-plugin-promise": "^7.2.1",
+    "eslint-plugin-security": "^4.0.0",
+    "globals": "^16.5.0",
+    "jiti": "^2.6.1",
+    "oxlint": "^1.85.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.0.18"
+  },
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/InnovsoftInc/archmap"
+  }
+}

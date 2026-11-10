@@ -1,0 +1,15 @@
+// Where archmap lives and which version this copy is.
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const HOME_REPO = "InnovsoftInc/archmap";
+
+export const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+export const VERSION = (
+  JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as {
+    version: string;
+  }
+).version;

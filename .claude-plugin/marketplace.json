@@ -1,0 +1,16 @@
+{
+  "name": "archmap",
+  "owner": {
+    "name": "TTT Studios"
+  },
+  "description": "TTT Studios' archmap plugin: an architecture map kept as files in your repo.",
+  "plugins": [
+    {
+      "name": "archmap",
+      "source": "./plugin",
+      "description": "Keep the project's architecture map current: set it up, record changes as saves, and publish versions.",
+      "version": "0.3.0",
+      "repository": "https://github.com/InnovsoftInc/archmap"
+    }
+  ]
+}

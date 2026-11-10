@@ -1,0 +1,11 @@
+# local stack
+services:
+  db:
+    image: postgres:16
+  web:
+    build: .
+    depends_on:
+      - db
+
+volumes:
+  data:

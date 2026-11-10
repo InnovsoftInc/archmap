@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Architecture map</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      id="fontsheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <style id="brandvars"></style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="bar">
+        <div class="r1">
+          <div class="brand">
+            <img id="logo" alt="" hidden />
+            <div class="title">
+              <h1 id="title">Architecture map</h1>
+              <p id="sub">Loading…</p>
+            </div>
+          </div>
+          <span class="hlinks" id="hlinks"></span>
+          <div class="vers">
+            <label class="field" for="ver"
+              >Version
+              <select id="ver"></select
+            ></label>
+            <button type="button" class="tbtn" id="bCmp" aria-expanded="false">
+              Compare
+            </button>
+            <label class="field" for="cmp" id="cmpWrap" hidden
+              >with
+              <select id="cmp"></select
+            ></label>
+            <span class="cmpnote" id="cmpNote" hidden
+              ><span
+                ><span class="sw" style="background: var(--add)"></span
+                >added</span
+              ><span
+                ><span class="sw" style="background: var(--chg)"></span
+                >changed</span
+              ><span
+                ><span class="sw" style="background: var(--del)"></span
+                >removed</span
+              ></span
+            >
+          </div>
+        </div>
+        <div class="r2">
+          <nav class="crumbs" id="crumbs" aria-label="Where you are"></nav>
+          <label class="search" for="q">
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <circle cx="5" cy="5" r="3.6" />
+              <path d="M8 8l3 3" />
+            </svg>
+            <input
+              id="q"
+              type="search"
+              placeholder="Find a service, table or column"
+              autocomplete="off"
+              aria-label="Find a service, table or column"
+            />
+          </label>
+          <label class="toggle" for="fadePerson" id="fadeWrap" hidden
+            ><input id="fadePerson" type="checkbox" checked /> Fade links to
+            person</label
+          >
+          <button type="button" class="tbtn" id="bFlows">Flows</button>
+          <div class="menuwrap">
+            <button
+              type="button"
+              class="tbtn"
+              id="bMore"
+              aria-haspopup="true"
+              aria-expanded="false"
+            >
+              More ▾
+            </button>
+            <div class="menu" id="more" role="menu" hidden>
+              <button type="button" role="menuitem" id="bChanges">
+                What changed
+              </button>
+              <button type="button" role="menuitem" id="bEnums" hidden>
+                Enum types
+              </button>
+              <button type="button" role="menuitem" id="bHow">
+                How to update
+              </button>
+            </div>
+          </div>
+        </div>
+        <nav class="r3" id="chips" aria-label="Areas"></nav>
+        <nav class="r3" id="personas" aria-label="Personas" hidden>
+          <span class="navlbl">Personas</span>
+        </nav>
+      </header>
+      <main
+        class="viewport"
+        id="vp"
+        aria-label="Map. Drag to pan, scroll to zoom, click an item for details."
+      >
+        <div class="world" id="world">
+          <div id="zoneLayer"></div>
+          <svg class="edges" id="edges" aria-hidden="true"></svg>
+          <div id="cardLayer"></div>
+        </div>
+        <div class="msg" id="msg" hidden>
+          <div>
+            <h2 id="msgH"></h2>
+            <p id="msgP"></p>
+          </div>
+        </div>
+        <div class="bottombar">
+          <div class="controls">
+            <button type="button" id="zin" aria-label="Zoom in">+</button>
+            <button type="button" id="zout" aria-label="Zoom out">−</button>
+            <button type="button" id="fit">Fit</button>
+            <button type="button" id="reset">Reset layout</button>
+          </div>
+          <div class="filters" id="filters"></div>
+        </div>
+        <canvas
+          class="mini"
+          id="mini"
+          aria-label="Minimap: click to move the view"
+        ></canvas>
+        <aside class="panel" id="panel" hidden aria-live="polite"></aside>
+      </main>
+    </div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
