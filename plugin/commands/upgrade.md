@@ -1,7 +1,7 @@
 ---
 description: Upgrade the project's copy of archmap in .archmap/ to a newer release.
 argument-hint: "[version]"
-allowed-tools: Bash(node .archmap/bin/archmap.mjs upgrade:*)
+allowed-tools: Bash(node .archmap/bin/archmap.mjs upgrade:*), Bash(node .archmap/bin/archmap.mjs check:*)
 ---
 
 # Upgrade archmap

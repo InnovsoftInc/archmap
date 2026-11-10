@@ -1,6 +1,7 @@
 // Checks the archmap copy in the project (.archmap/VERSION), from the project
 // root. Prints `ok`, `old <version>`, or
-// `missing npx -y github:<owner/repo>#v<version> install`.
+// `missing npx -y github:<owner/repo>#v<version> install` (or, from the plugin
+// cache, `missing see the install instructions ...`).
 // The plugin's commands call that copy, so they need at least this version.
 // The repo and version come from the package this plugin ships in.
 import { readFileSync } from "node:fs";
@@ -36,14 +37,33 @@ const installed = () => {
 };
 
 // The install command for this plugin's own package, from its package.json.
+// When the plugin runs from Claude Code's plugin cache there is no package
+// above it, so point to the README's install instructions instead.
 const installCommand = () => {
-  const file = fileURLToPath(new URL("../../package.json", import.meta.url));
-  const pkg = JSON.parse(readFileSync(file, "utf8"));
-  const repo = String(pkg.repository?.url ?? "")
-    .replace(/^git\+/, "")
-    .replace(/\.git$/, "")
-    .replace(/^https?:\/\/github\.com\//, "");
-  return `npx -y github:${repo}#v${pkg.version} install`;
+  try {
+    const file = fileURLToPath(new URL("../../package.json", import.meta.url));
+    const pkg = JSON.parse(readFileSync(file, "utf8"));
+    const repo = String(pkg.repository?.url ?? "")
+      .replace(/^git\+/, "")
+      .replace(/\.git$/, "")
+      .replace(/^https?:\/\/github\.com\//, "");
+    return `npx -y github:${repo}#v${pkg.version} install`;
+  } catch {
+    return `see the install instructions under Quick start in ${readme()}`;
+  }
+};
+
+const readme = () => {
+  try {
+    const file = fileURLToPath(
+      new URL("../.claude-plugin/plugin.json", import.meta.url),
+    );
+    const repo = JSON.parse(readFileSync(file, "utf8")).repository;
+    if (typeof repo === "string" && repo !== "") return `${repo}#quick-start`;
+  } catch {
+    // fall through
+  }
+  return "the archmap README";
 };
 
 const version = installed();

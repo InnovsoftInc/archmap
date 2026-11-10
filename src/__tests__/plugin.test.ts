@@ -124,10 +124,10 @@ describe("the plugin", () => {
     }
   });
 
-  it("upgrade pre-approves only the upgrade command", () => {
+  it("upgrade pre-approves only the upgrade and check commands", () => {
     const fm = frontmatter(read(join(plugin, "commands", "upgrade.md")));
     expect(fm.get("allowed-tools")).toBe(
-      "Bash(node .archmap/bin/archmap.mjs upgrade:*)",
+      "Bash(node .archmap/bin/archmap.mjs upgrade:*), Bash(node .archmap/bin/archmap.mjs check:*)",
     );
     expect(fm.get("argument-hint")).toBe('"[version]"');
   });
@@ -306,6 +306,28 @@ describe("min-version.mjs", () => {
     const out = run().trim();
     expect(out).toBe("missing npx -y github:Acme/archmap#v0.3.0 install");
     expect(out).toMatch(/^missing npx -y github:/);
+  });
+
+  it("without ../../package.json (the plugin cache), points to the README instead of crashing", () => {
+    rmSync(join(tmp, "pkg", "package.json"));
+    mkdirSync(join(tmp, "pkg", "plugin", ".claude-plugin"));
+    writeFileSync(
+      join(tmp, "pkg", "plugin", ".claude-plugin", "plugin.json"),
+      JSON.stringify({
+        name: "archmap",
+        repository: "https://github.com/Acme/archmap",
+      }),
+    );
+    expect(run()).toBe(
+      "missing see the install instructions under Quick start in https://github.com/Acme/archmap#quick-start\n",
+    );
+  });
+
+  it("with neither package.json nor plugin.json, still says missing", () => {
+    rmSync(join(tmp, "pkg", "package.json"));
+    expect(run()).toBe(
+      "missing see the install instructions under Quick start in the archmap README\n",
+    );
   });
 
   it("says old below 0.3.0", () => {

@@ -14,7 +14,7 @@ Run every command from the project root with the project's copy of the CLI: `nod
 Run `node ${CLAUDE_PLUGIN_ROOT}/bin/min-version.mjs`. It prints one of:
 
 - `ok`: carry on.
-- `missing <command>`: the archmap CLI isn't copied into this project (there's no `.archmap/VERSION`). Show the person the command that follows `missing`, to run from the project root, then `/archmap:review` again. Stop here.
+- `missing <command>`: the archmap CLI isn't copied into this project (there's no `.archmap/VERSION`). Show the person what follows `missing` (the install command to run from the project root, or where to find it), then `/archmap:review` again. Stop here.
 - `old <version>`: the project's copy is older than this plugin needs (0.3.0). Point the person to `/archmap:upgrade` and stop here.
 
 If there's no `archmap.config.json` (found as described above), tell the person to run `/archmap:setup` and stop.
