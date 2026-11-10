@@ -6,21 +6,21 @@ Nothing in the package is specific to one project. Each project brands its own m
 
 ## Quick start
 
-Run this once from the project root (Node 24 or newer):
+Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.3.0` (see the repo's tags, or run `node .archmap/bin/archmap.mjs upgrade` once you have a copy):
 
 ```bash
 npx -y github:InnovsoftInc/archmap#v0.3.0 install
 ```
 
-`InnovsoftInc/archmap` is `HOME_REPO` in `src/home.ts`, and changes when the repo moves to tttstudios. The command copies archmap into `.archmap/`, adds the `archmap` scripts to `package.json`, creates `architecture/` with a starter save, and connects Claude Code. From then on everything runs from that copy; nothing is installed from a package registry.
+`InnovsoftInc/archmap` is `HOME_REPO` in `src/home.ts`, and changes when the repo moves to tttstudios. The command copies archmap into `.archmap/`, marks that folder as vendored in `.gitattributes`, adds a pointer to the map to `AGENTS.md` (creating it if needed), and connects Claude Code for you. From then on everything runs from that copy; nothing is installed from a package registry.
 
-Then ask Claude to run `/archmap:setup`, which fills the map from your code or a short interview.
+Then ask Claude to run `/archmap:setup`. It creates `architecture/` with a starter save, adds the `archmap` scripts to `package.json` (when there is one), and fills the map from your code or a short interview.
 
-The map viewer runs from the copy too. View it with `pnpm archmap:dev` or `node .archmap/bin/archmap.mjs dev` (http://127.0.0.1:4321, reloads when files change), and write a static site with `node .archmap/bin/archmap.mjs build`.
+Once setup has run, view the map with `pnpm archmap:dev` or `node .archmap/bin/archmap.mjs dev` (http://127.0.0.1:4321, reloads when files change), and write a static site with `node .archmap/bin/archmap.mjs build`.
 
 ### Teammates
 
-After cloning, run `pnpm archmap:claude` (or `node .archmap/bin/archmap.mjs claude`) once. It connects Claude Code to `.archmap/` for you only, at local scope, and commits nothing.
+After cloning, run `pnpm archmap:claude` (or `node .archmap/bin/archmap.mjs claude`) once. It connects Claude Code to `.archmap/` for you only, at local scope, and commits nothing. Claude Code keeps one `archmap` marketplace per machine, so if another project already connected its `.archmap/`, this project's `/archmap` commands come from that copy; each project still runs its own `.archmap/bin/archmap.mjs`, and an older copy is caught by the version check.
 
 ### Upgrading
 
