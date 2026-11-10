@@ -82,10 +82,22 @@ export const connectClaude = (
   }
 
   let alreadyHere = false;
+  // Claude Code keeps one machine-wide marketplace list, keyed by name,
+  // whatever --scope says. So a second archmap project finds the first one's
+  // .archmap/ already registered as "archmap". Removing it would disconnect
+  // that project, so share it instead: each project's commands, skill and
+  // hook still run that project's own .archmap/bin/archmap.mjs.
+  let sharedFrom: string | undefined;
   if (listUsable && existing) {
     const path = existing.path;
     if (typeof path === "string" && resolve(path) === resolve(target))
       alreadyHere = true;
+    else if (
+      existing.source === "directory" &&
+      typeof path === "string" &&
+      /[\\/]\.archmap$/.test(resolve(path))
+    )
+      sharedFrom = resolve(path);
     else {
       const where = [
         existing.path,
@@ -103,7 +115,7 @@ export const connectClaude = (
     }
   }
 
-  if (!alreadyHere) {
+  if (!alreadyHere && !sharedFrom) {
     const added = run("claude", add);
     if (added.missing)
       return {
@@ -137,12 +149,20 @@ export const connectClaude = (
   const installMessage = `${installed.stderr}${installed.stdout}`.trim();
   if (
     installed.status !== 0 &&
-    !(alreadyHere && /already/i.test(installMessage))
+    !((alreadyHere || sharedFrom) && /already/i.test(installMessage))
   )
     return {
       ok: false,
       lines: [
-        `Could not install the archmap plugin in Claude Code: ${`${installed.stderr}${installed.stdout}`.trim()}`,
+        `Could not install the archmap plugin in Claude Code: ${installMessage}`,
+      ],
+    };
+  if (sharedFrom)
+    return {
+      ok: true,
+      lines: [
+        `Connected Claude Code to archmap (local scope, not committed). Claude Code keeps one archmap marketplace per machine, and it already points at another project's copy (${sharedFrom}), so this project's /archmap commands come from there.`,
+        "Each project still runs its own .archmap/bin/archmap.mjs, so this project's map and version are its own.",
       ],
     };
   if (alreadyHere)

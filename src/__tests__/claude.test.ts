@@ -60,6 +60,83 @@ describe("connectClaude", () => {
     expect(text).toContain("/elsewhere");
   });
 
+  it("another project's .archmap/ marketplace is shared, not replaced", () => {
+    const { run, calls } = fake(
+      listing({
+        name: "archmap",
+        source: "directory",
+        path: "/other/project/.archmap",
+      }),
+    );
+    const r = connectClaude(root, { run });
+    expect(calls).toEqual([
+      ["claude", list],
+      ["claude", inst],
+    ]);
+    expect(r.ok).toBe(true);
+    const text = r.lines.join("\n");
+    expect(text).toContain("/other/project/.archmap");
+    expect(text).toContain(".archmap/bin/archmap.mjs");
+    expect(text).not.toContain("marketplace remove");
+  });
+
+  it("another project's .archmap/ with the plugin already installed here is fine", () => {
+    const { run } = fake((args) =>
+      args[2] === "list"
+        ? {
+            stdout: JSON.stringify([
+              {
+                name: "archmap",
+                source: "directory",
+                path: "/other/project/.archmap/",
+              },
+            ]),
+          }
+        : args[1] === "install"
+          ? { status: 1, stderr: "Plugin archmap is already installed" }
+          : {},
+    );
+    const r = connectClaude(root, { run });
+    expect(r.ok).toBe(true);
+    expect(r.lines.join("\n")).toContain("/other/project/.archmap");
+  });
+
+  it("another project's .archmap/ reports a failed install", () => {
+    const { run } = fake((args) =>
+      args[2] === "list"
+        ? {
+            stdout: JSON.stringify([
+              {
+                name: "archmap",
+                source: "directory",
+                path: "/other/project/.archmap",
+              },
+            ]),
+          }
+        : args[1] === "install"
+          ? { status: 1, stderr: "boom" }
+          : {},
+    );
+    const r = connectClaude(root, { run });
+    expect(r.ok).toBe(false);
+    expect(r.lines.join("\n")).toContain("boom");
+  });
+
+  it("an old node_modules archmap is still left alone", () => {
+    const { run, calls } = fake(
+      listing({
+        name: "archmap",
+        source: "directory",
+        path: "/other/project/node_modules/@tttstudios/archmap",
+      }),
+    );
+    const r = connectClaude(root, { run });
+    expect(calls).toEqual([["claude", list]]);
+    expect(r.lines.join("\n")).toContain(
+      "claude plugin marketplace remove archmap",
+    );
+  });
+
   it("the same path is reported as connected, and the plugin is still installed", () => {
     const { run, calls } = fake(
       listing({
