@@ -20,7 +20,7 @@ export default defineConfig([
     "dist",
     "coverage",
     "viewer/**",
-    ".tmp-*",
+    "**/.tmp-*",
     "src/__tests__/fixtures/**",
   ]),
   {
