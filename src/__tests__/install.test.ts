@@ -149,6 +149,32 @@ describe("install", () => {
       expect(text.split(needle).length - 1).toBe(1);
   });
 
+  it("starts a new AGENTS.md with a heading", () => {
+    install(root, { run: fakeRun().run });
+    const text = readFileSync(join(root, "AGENTS.md"), "utf8");
+    expect(text.startsWith("# Agent notes\n\n- Architecture map: ")).toBe(true);
+    expect(text.split("# Agent notes").length - 1).toBe(1);
+  });
+
+  it("an existing AGENTS.md gets only the bullet", () => {
+    writeFileSync(join(root, "AGENTS.md"), "Be kind.\n");
+    install(root, { run: fakeRun().run });
+    const text = readFileSync(join(root, "AGENTS.md"), "utf8");
+    expect(text).not.toContain("# Agent notes");
+    expect(text.startsWith("Be kind.\n- Architecture map: ")).toBe(true);
+  });
+
+  it("doesn't duplicate lines in a CRLF file", () => {
+    writeFileSync(
+      join(root, ".gitattributes"),
+      "*.png binary\r\n.archmap/** linguist-vendored -diff\r\n",
+    );
+    install(root, { run: fakeRun().run });
+    expect(readFileSync(join(root, ".gitattributes"), "utf8")).toBe(
+      "*.png binary\r\n.archmap/** linguist-vendored -diff\r\n",
+    );
+  });
+
   it("never writes .claude/settings.json", () => {
     install(root, { run: fakeRun().run });
     expect(existsSync(join(root, ".claude", "settings.json"))).toBe(false);

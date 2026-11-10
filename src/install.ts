@@ -34,11 +34,21 @@ const real = (path: string): string => {
   }
 };
 
-// Adds `line` to the file (creating it) unless a line already matches.
-// Returns true when it wrote.
-export const appendLineOnce = (file: string, line: string): boolean => {
-  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (text.split("\n").includes(line)) return false;
+// Adds `line` to the file unless a line already matches (ignoring trailing
+// whitespace, so a CRLF file isn't given a second copy). A new file starts
+// with `header`, when given. Returns true when it wrote.
+export const appendLineOnce = (
+  file: string,
+  line: string,
+  header?: string,
+): boolean => {
+  const exists = existsSync(file);
+  const text = exists ? readFileSync(file, "utf8") : "";
+  if (text.split("\n").some((l) => l.trimEnd() === line)) return false;
+  if (!exists && header !== undefined) {
+    writeFileSync(file, `${header}\n\n${line}\n`);
+    return true;
+  }
   const lead = text === "" || text.endsWith("\n") ? "" : "\n";
   appendFileSync(file, `${lead}${line}\n`);
   return true;
@@ -95,7 +105,7 @@ export const install = (
     repository: { type: "git", url: `https://github.com/${HOME_REPO}` },
   });
   appendLineOnce(join(projectRoot, ".gitattributes"), GITATTRIBUTES_LINE);
-  appendLineOnce(join(projectRoot, "AGENTS.md"), AGENTS_LINE);
+  appendLineOnce(join(projectRoot, "AGENTS.md"), AGENTS_LINE, "# Agent notes");
   const claude = connectClaude(projectRoot, { run: opts.run });
   return {
     ok: claude.ok,
