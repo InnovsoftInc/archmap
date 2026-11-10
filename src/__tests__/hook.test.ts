@@ -229,7 +229,7 @@ describe("the hook end to end", () => {
   });
   afterAll(() => {
     vi.unstubAllEnvs();
-    rmSync(tmp, { recursive: true, force: true });
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
   });
 
   it("blocks once, then stays quiet", () => {
