@@ -9,7 +9,14 @@
     "node": true,
     "es2024": true
   },
-  "ignorePatterns": ["dist", "viewer/**", "src/__tests__/fixtures/**"],
+  "ignorePatterns": [
+    "dist",
+    "node_modules/**",
+    "coverage/**",
+    "viewer/**",
+    "src/__tests__/fixtures/**",
+    "**/.tmp-*/**"
+  ],
   "rules": {
     "vitest/no-disabled-tests": "error",
     "vitest/no-focused-tests": "error",

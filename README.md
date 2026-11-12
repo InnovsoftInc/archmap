@@ -6,6 +6,8 @@ An AI agent explores the repo and its connections, decides what belongs on the m
 
 Nothing in the package is specific to one project. Each project brands its own map with `archmap.config.json`.
 
+archmap lives in this repo. Projects don't install it: they run it with `npx -y github:InnovsoftInc/archmap#v<version>` at the version their `archmap.config.json` pins.
+
 ## Quick start
 
 Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.4.0`:
@@ -121,3 +123,16 @@ Any CSS custom property the viewer uses can be overridden under `theme.light` an
 - The map is parsed from the markdown files (frontmatter with a YAML parser, bodies with `marked`). `check` validates it against each kind's schema and looks every evidence path up in the repo.
 - `build` and `dev` write the viewer (`viewer/`), plain HTML, CSS and JavaScript with no framework and no build step, reading a generated `data.json`.
 - The CLI runs on Node 24 straight from the TypeScript source, with no build step. `bin/archmap.mjs` strips the types itself because Node won't do it for files under `node_modules`, where `npx` runs the package from.
+
+## Developing archmap
+
+Clone this repo and use Node 24 or newer with pnpm 10 (the version is pinned in `package.json`):
+
+```bash
+pnpm install
+pnpm test        # vitest, with coverage written to coverage.json
+pnpm lint        # oxlint, then eslint
+pnpm typecheck   # tsc --noEmit
+```
+
+Run one test file with `pnpm exec vitest run src/__tests__/<file>`. CI (`.github/workflows/ci.yml`) runs typecheck, lint and test on every push and pull request. To release, bump `version` in `package.json`, tag the commit `v<version>` and push the tag; projects then pin that tag.

@@ -8,7 +8,7 @@ export default defineConfig({
     // one file by hand skips instrumenting the whole package.
     coverage: {
       provider: "istanbul",
-      reporter: [["json", { file: `../coverage.json` }]],
+      reporter: [["json", { file: "coverage.json" }]],
     },
   },
 });
