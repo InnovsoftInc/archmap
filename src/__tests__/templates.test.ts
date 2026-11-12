@@ -82,4 +82,41 @@ describe("CI templates", () => {
     expect(az).toContain("ne(variables['System.PullRequest.IsFork'], 'True')");
     expect(az).toContain("persistCredentials: true");
   });
+
+  it("GitHub check job checks out the head sha, and the agent step fails when the agent does", () => {
+    const { jobs } = github();
+    const checkout = jobs.check.steps.find((s) =>
+      String(s.uses).startsWith("actions/checkout"),
+    );
+    expect(checkout?.with).toMatchObject({
+      ref: "${{ github.event.pull_request.head.sha }}",
+    });
+    const agent = jobs.map.steps.find((s) => String(s.run).includes(" agent "));
+    expect(agent?.shell === "bash" || /pipefail/.test(String(agent?.run))).toBe(
+      true,
+    );
+  });
+
+  it("Azure scripts derive full branch names, stop on failure and only run after success", () => {
+    const text = load("azure-pipelines");
+    expect(text).not.toMatch(/SourceBranchName|TargetBranchName/);
+    expect(text).toContain("System.PullRequest.SourceBranch)");
+    expect(text).toContain("System.PullRequest.TargetBranch)");
+    expect(text).toContain("#refs/heads/}");
+    const doc = parse(text) as {
+      stages: { jobs: { steps: Step[] }[] }[];
+    };
+    const steps = doc.stages.flatMap((st) => st.jobs.flatMap((j) => j.steps));
+    const scripts = steps
+      .map((step) => step.bash)
+      .filter((b): b is string => typeof b === "string" && b.includes("\n"));
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((b) => b.includes("set -euo pipefail"))).toBe(true);
+    const mapSteps = (doc.stages[0]?.jobs[0]?.steps ?? []).filter(
+      (s) => s.condition,
+    );
+    expect(mapSteps.length).toBeGreaterThan(0);
+    for (const s of mapSteps)
+      expect(String(s.condition)).toContain("succeeded()");
+  });
 });

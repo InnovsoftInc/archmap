@@ -27,8 +27,13 @@ stages:
               versionSpec: 24.x
           # the map job's own commits start with "archmap: "; don't answer them
           - bash: |
-              git fetch origin "$(System.PullRequest.SourceBranchName)" "$(System.PullRequest.TargetBranchName)"
-              git checkout -B "$(System.PullRequest.SourceBranchName)" "origin/$(System.PullRequest.SourceBranchName)"
+              set -euo pipefail
+              src="$(System.PullRequest.SourceBranch)"
+              src="${src#refs/heads/}"
+              tgt="$(System.PullRequest.TargetBranch)"
+              tgt="${tgt#refs/heads/}"
+              git fetch origin "$src" "$tgt"
+              git checkout -B "$src" "origin/$src"
               if [[ "$(git log -1 --format=%s)" == "archmap: "* ]]; then
                 echo "##vso[task.setvariable variable=skip]true"
               fi
@@ -37,13 +42,20 @@ stages:
           # step to install a different agent
           - bash: npm install -g @anthropic-ai/claude-code
             displayName: Install the agent
-            condition: ne(variables.skip, 'true')
-          - bash: __CLI__ agent --base origin/$(System.PullRequest.TargetBranchName) | tee "$(Agent.TempDirectory)/archmap-agent.txt"
+            condition: and(succeeded(), ne(variables.skip, 'true'))
+          - bash: |
+              set -euo pipefail
+              tgt="$(System.PullRequest.TargetBranch)"
+              tgt="${tgt#refs/heads/}"
+              __CLI__ agent --base "origin/$tgt" | tee "$(Agent.TempDirectory)/archmap-agent.txt"
             displayName: Update the map
-            condition: ne(variables.skip, 'true')
+            condition: and(succeeded(), ne(variables.skip, 'true'))
             env:
               ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           - bash: |
+              set -euo pipefail
+              src="$(System.PullRequest.SourceBranch)"
+              src="${src#refs/heads/}"
               git config user.name "Archmap"
               git config user.email "archmap@users.noreply.invalid"
               committed=false
@@ -59,12 +71,12 @@ stages:
                 committed=true
               fi
               if [ "$committed" = true ]; then
-                git push origin "HEAD:refs/heads/$(System.PullRequest.SourceBranchName)"
+                git push origin "HEAD:refs/heads/$src"
                 echo "##vso[task.setvariable variable=pushed;isOutput=true]true"
               fi
             name: push
             displayName: Commit and publish the map
-            condition: ne(variables.skip, 'true')
+            condition: and(succeeded(), ne(variables.skip, 'true'))
 
   # Required, no AI: fails the pull request when the map is invalid or the
   # change touches the architecture without touching the map.
@@ -82,6 +94,9 @@ stages:
             inputs:
               versionSpec: 24.x
           - bash: |
-              git fetch origin "$(System.PullRequest.TargetBranchName)"
-              __CLI__ check --base origin/$(System.PullRequest.TargetBranchName)
+              set -euo pipefail
+              tgt="$(System.PullRequest.TargetBranch)"
+              tgt="${tgt#refs/heads/}"
+              git fetch origin "$tgt"
+              __CLI__ check --base "origin/$tgt"
             displayName: Check the map

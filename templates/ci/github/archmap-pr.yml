@@ -17,7 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          # the head commit, not the branch: a fork's branch isn't in this repo
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -63,6 +64,8 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code
       - name: Update the map
         if: steps.guard.outputs.skip != 'true'
+        # bash with pipefail, so a failed agent fails this step despite tee
+        shell: bash
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: __CLI__ agent --base origin/${{ github.base_ref }} | tee "$RUNNER_TEMP/archmap-agent.txt"
