@@ -33,12 +33,24 @@ export const loadMap = (dir: string): LoadedMap => {
   const configPath = join(dir, "archmap.config.json");
   if (existsSync(configPath)) {
     try {
-      config = JSON.parse(readFileSync(configPath, "utf8")) as MapConfig;
-      if (typeof config.name !== "string" || !config.name)
+      const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      )
         fileErrors.push({
           file: "archmap.config.json",
-          message: `"name" is required`,
+          message: "must be a JSON object",
         });
+      else {
+        config = parsed as MapConfig;
+        if (typeof config.name !== "string" || !config.name)
+          fileErrors.push({
+            file: "archmap.config.json",
+            message: `"name" is required`,
+          });
+      }
     } catch (err) {
       fileErrors.push({
         file: "archmap.config.json",

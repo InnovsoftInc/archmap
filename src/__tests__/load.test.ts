@@ -102,3 +102,17 @@ describe("splitFrontmatter", () => {
     expect(splitFrontmatter("---\n- a\n- b\n---\n")).toHaveProperty("error");
   });
 });
+
+describe("loadMap config that is not an object", () => {
+  it.each(["null", "[]", '"x"'])(
+    "reports %s as a file error and uses the default config",
+    (text) => {
+      write("archmap.config.json", text);
+      const m = loadMap(dir);
+      expect(m.fileErrors).toEqual([
+        { file: "archmap.config.json", message: "must be a JSON object" },
+      ]);
+      expect(m.config).toEqual({ name: "Architecture" });
+    },
+  );
+});
