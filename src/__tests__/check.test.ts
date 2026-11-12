@@ -201,6 +201,21 @@ describe("version", () => {
     expect(versionWarning({ name: "T" })).toBeNull();
   });
 
+  it("uses the pinned version, else the running one", () => {
+    const at = (v: string) => `npx -y github:${HOME_REPO}#v${v}`;
+    const d = join(root, "architecture");
+    expect(cliCommand({ name: "T", archmap: "0.3.9" }, d, root)).toBe(
+      at("0.3.9"),
+    );
+    expect(cliCommand({ name: "T" }, d, root)).toBe(at(VERSION));
+  });
+
+  it("appends --dir to the cli from the config off the default folder", () => {
+    expect(
+      cliCommand({ name: "T", cli: "archmap" }, join(root, "docs/map"), root),
+    ).toBe("archmap --dir docs/map");
+  });
+
   it("builds the cli command, with --dir only off the default folder", () => {
     const base = `npx -y github:${HOME_REPO}#v${VERSION}`;
     expect(cliCommand({ name: "T" }, join(root, "architecture"), root)).toBe(
