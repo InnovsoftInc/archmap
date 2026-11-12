@@ -1,6 +1,6 @@
 {
   "name": "@tttstudios/archmap",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "An architecture map kept as files in your repo: categories, services, connections, database tables, personas and flows, versioned by sprint, viewable as a static site and updated by Claude.",
   "type": "module",
   "bin": {
@@ -47,5 +47,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/InnovsoftInc/archmap"
+  },
+  "dependencies": {
+    "marked": "^18.1.3",
+    "yaml": "^2.9.1"
   }
 }

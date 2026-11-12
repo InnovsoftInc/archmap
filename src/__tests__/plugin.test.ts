@@ -44,7 +44,7 @@ describe("the plugin", () => {
     ) as { name: string; description: string; version: string };
     expect(manifest.name).toBe("archmap");
     expect(manifest.description).not.toBe("");
-    expect(manifest.version).toBe("0.3.0");
+    expect(manifest.version).toBe("0.4.0");
   });
 
   it("the marketplace lists the plugin from ./plugin", () => {

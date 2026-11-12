@@ -36,7 +36,7 @@ describe("the package", () => {
     expect(pkg).not.toHaveProperty("private");
     expect(pkg).not.toHaveProperty("publishConfig");
     expect(pkg.bin.archmap).toBe("./bin/archmap.mjs");
-    expect(pkg.version).toBe("0.3.0");
+    expect(pkg.version).toBe("0.4.0");
     expect(pkg.repository.url).toBe(repo);
     expect(pkg.files).toContain("bin");
     expect(pkg.files).toContain("plugin");
@@ -46,12 +46,12 @@ describe("the package", () => {
       version: string;
       repository: string;
     };
-    expect(plugin.version).toBe("0.3.0");
+    expect(plugin.version).toBe("0.4.0");
     expect(plugin.repository).toBe(repo);
     const market = JSON.parse(read(".claude-plugin/marketplace.json")) as {
       plugins: { version: string; repository: string }[];
     };
-    expect(market.plugins[0]?.version).toBe("0.3.0");
+    expect(market.plugins[0]?.version).toBe("0.4.0");
     expect(market.plugins[0]?.repository).toBe(repo);
   });
 
