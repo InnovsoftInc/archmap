@@ -3,33 +3,58 @@
 
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import { stripTypeScriptTypes } from "node:module";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { ensureDir, loadProject } from "./project.ts";
+import { marked } from "marked";
+import { runCheck } from "./check.ts";
+import { loadMap } from "./map/load.ts";
+import { ensureDir } from "./project.ts";
+import { docSections, stripPublic, toViewModel } from "./view.ts";
+import type { DocView } from "./view.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIEWER = join(HERE, "..", "viewer");
 const STATIC = ["index.html", "app.js", "styles.css"];
 
-/** core.ts with its types removed, so the browser runs the same replay as the CLI. */
-export const coreJs = (): string =>
-  stripTypeScriptTypes(readFileSync(join(HERE, "core.ts"), "utf8"));
+const html = (md: string | undefined): string | undefined =>
+  md === undefined ? undefined : (marked.parse(md, { async: false }) as string);
 
 /** Everything the viewer needs, in one JSON document. */
-export const siteData = (dir: string, dev = false): string => {
-  const p = loadProject(dir);
+export const siteData = (
+  root: string,
+  dir: string,
+  opts: { dev?: boolean; public?: boolean } = {},
+): string => {
+  const { errors, warnings, map } = runCheck(root, dir);
+  const docs: Record<string, DocView> = {};
+  for (const d of map.docs) {
+    const s = docSections(d);
+    const code = Array.isArray(d.data.code)
+      ? d.data.code.filter((c): c is string => typeof c === "string")
+      : undefined;
+    docs[d.id] = {
+      folder: d.folder,
+      name: typeof d.data.name === "string" ? d.data.name : d.id,
+      status: typeof d.data.status === "string" ? d.data.status : "",
+      summary: html(s.summary) ?? "",
+      how: html(s.how),
+      dev: html(s.dev),
+      code,
+    };
+  }
+  const model = toViewModel(map.docs);
   const body = {
     config: {
-      ...p.config,
-      logo: p.config.logo ? "logo" + extname(p.config.logo) : undefined,
+      ...map.config,
+      logo: map.config.logo ? "logo" + extname(map.config.logo) : undefined,
     },
-    saves: p.saves,
-    versions: p.versions,
-    instructions: p.instructions,
-    fileErrors: p.fileErrors,
-    dev,
+    readme: html(map.readme) ?? "",
+    model: opts.public ? stripPublic(model) : model,
+    docs: opts.public ? stripPublic(docs) : docs,
+    ...(opts.public ? {} : { check: { errors, warnings } }),
+    dev: opts.dev ?? false,
+    public: opts.public ?? false,
   };
   const json = JSON.stringify(body);
   return JSON.stringify({
@@ -38,16 +63,19 @@ export const siteData = (dir: string, dev = false): string => {
   });
 };
 
-export const build = (dir: string, out: string): string[] => {
+export const build = (
+  root: string,
+  dir: string,
+  out: string,
+  opts: { public?: boolean } = {},
+): string[] => {
   ensureDir(out);
   STATIC.forEach((f) => copyFileSync(join(VIEWER, f), join(out, f)));
-  writeFileSync(join(out, "core.js"), coreJs());
-  writeFileSync(join(out, "data.json"), siteData(dir));
-  const p = loadProject(dir);
-  if (p.config.logo) {
-    const src = join(dir, p.config.logo);
-    if (existsSync(src))
-      copyFileSync(src, join(out, "logo" + extname(p.config.logo)));
+  writeFileSync(join(out, "data.json"), siteData(root, dir, opts));
+  const logo = loadMap(dir).config.logo;
+  if (logo) {
+    const src = join(dir, logo);
+    if (existsSync(src)) copyFileSync(src, join(out, "logo" + extname(logo)));
   }
   return [
     `Built the map into ${out}. Host the folder anywhere that serves static files.`,
@@ -64,16 +92,19 @@ const TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
 };
 
-export const serve = (dir: string, port: number): Promise<Server> => {
+export const serve = (
+  root: string,
+  dir: string,
+  port: number,
+): Promise<Server> => {
   const server = createServer((req, res) => {
     const name = basename((req.url || "/").split("?")[0]) || "index.html";
     try {
       let body: string | Buffer;
-      if (name === "data.json") body = siteData(dir, true);
-      else if (name === "core.js") body = coreJs();
+      if (name === "data.json") body = siteData(root, dir, { dev: true });
       else if (STATIC.includes(name)) body = readFileSync(join(VIEWER, name));
       else if (name.startsWith("logo.")) {
-        const logo = loadProject(dir).config.logo;
+        const logo = loadMap(dir).config.logo;
         if (!logo) throw new Error("no logo");
         body = readFileSync(join(dir, logo));
       } else {

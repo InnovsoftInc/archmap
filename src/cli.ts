@@ -130,11 +130,16 @@ const main = async (argv: string[]): Promise<void> => {
     case "build":
       return print({
         ok: true,
-        lines: build(dir, resolve(values.out || "archmap-site")),
+        lines: build(
+          process.cwd(),
+          dir,
+          resolve(values.out || "archmap-site"),
+          {},
+        ),
       });
     case "dev": {
       const port = Number(values.port || 4321);
-      await serve(dir, port);
+      await serve(process.cwd(), dir, port);
       console.log(
         `Architecture map at http://127.0.0.1:${port}/ (reloads when files in ${dir} change). Ctrl+C to stop.`,
       );

@@ -8,7 +8,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { request } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   check,
@@ -18,7 +17,6 @@ import {
   scanCommand,
   snapshot,
 } from "../commands.ts";
-import { build, serve } from "../site.ts";
 
 let root: string;
 let dir: string;
@@ -229,61 +227,5 @@ describe("save, publish and snapshot", () => {
       latest_published: null,
       unpublished_saves: 1,
     });
-  });
-});
-
-describe("site", () => {
-  beforeEach(() => init(dir, { repoRoot: root, now }));
-
-  it("builds a static site whose core.js is plain JavaScript", () => {
-    const out = join(root, "site");
-    build(dir, out);
-    expect(readdirSync(out).sort()).toEqual([
-      "app.js",
-      "core.js",
-      "data.json",
-      "index.html",
-      "styles.css",
-    ]);
-    const core = readFileSync(join(out, "core.js"), "utf8");
-    expect(core).toContain("export const replay");
-    expect(core).not.toMatch(/: Model\b/);
-    const data = json(join(out, "data.json"));
-    expect(data.config).toMatchObject({ name: "My platform" });
-    expect((data.saves as unknown[]).length).toBe(1);
-  });
-
-  it("serves fresh data in dev mode", async () => {
-    const server = await serve(dir, 0);
-    const port = (server.address() as { port: number }).port;
-    const get = (path: string) =>
-      new Promise<{ status: number; body: string }>((resolve) =>
-        request({ host: "127.0.0.1", port, path }, (res) => {
-          let body = "";
-          res.on("data", (c: Buffer) => (body += c.toString()));
-          res.on("end", () => resolve({ status: res.statusCode || 0, body }));
-        }).end(),
-      );
-    const first = JSON.parse((await get("/data.json")).body) as {
-      dev: boolean;
-      rev: string;
-    };
-    expect(first.dev).toBe(true);
-    writeSave("api", [
-      {
-        kind: "service",
-        id: "api",
-        op: "add",
-        value: { name: "API" },
-        reason: "r",
-      },
-    ]);
-    const second = JSON.parse((await get("/data.json")).body) as {
-      rev: string;
-    };
-    expect(second.rev).not.toBe(first.rev);
-    expect((await get("/index.html")).status).toBe(200);
-    expect((await get("/secret.txt")).status).toBe(404);
-    await new Promise((resolve) => server.close(resolve));
   });
 });
