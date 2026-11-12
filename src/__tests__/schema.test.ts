@@ -368,4 +368,48 @@ describe("schemaProblems", () => {
       message: 'unknown key "conects"',
     });
   });
+
+  it("flags unknown keys inside list items, nested ones too", () => {
+    const d = service("api", {
+      connects: [{ to: "db", evidnce: "a.ts", evidence: "a.ts" }],
+      endpoints: [{ route: "GET /x", evidence: "a.ts", note: "x" }],
+    });
+    const s = store("db", {
+      tables: [
+        {
+          name: "t",
+          evidence: "s.ts",
+          columns: [{ name: "c", nullable: true }],
+        },
+      ],
+    });
+    expect(messages([d, s])).toEqual([
+      'connects[0] has unknown key "evidnce"',
+      'endpoints[0] has unknown key "note"',
+      'tables[0].columns[0] has unknown key "nullable"',
+    ]);
+  });
+
+  it("allows status only on connects entries, and exempts only planned connects from evidence", () => {
+    const d = service("api", {
+      endpoints: [{ route: "GET /x", status: "planned" }],
+      jobs: [{ name: "j", status: "planned" }],
+    });
+    const p = doc(
+      "personas",
+      "p",
+      live("P", { roles: [{ name: "r", status: "planned" }] }),
+    );
+    const s = store("db", { tables: [{ name: "t", status: "planned" }] });
+    expect(messages([d, p, s])).toEqual([
+      'endpoints[0] has unknown key "status"',
+      'jobs[0] has unknown key "status"',
+      "endpoints[0] needs evidence",
+      "jobs[0] needs evidence",
+      'roles[0] has unknown key "status"',
+      "roles[0] needs evidence",
+      'tables[0] has unknown key "status"',
+      "tables[0] needs evidence",
+    ]);
+  });
 });

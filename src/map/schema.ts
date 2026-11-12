@@ -97,7 +97,10 @@ const SHAPES: Record<Folder, Shape> = {
   },
 };
 
-/** Lists whose entries must cite evidence unless the doc, or the entry itself, is planned. */
+/**
+ * Lists whose entries must cite evidence unless the doc is planned. A `connects`
+ * entry may also be planned on its own (only `connects` entries have a status).
+ */
 const NEEDS_EVIDENCE = ["connects", "endpoints", "jobs", "tables", "roles"];
 
 export const isPlanned = (doc: Doc): boolean => doc.data.status === "planned";
@@ -160,6 +163,9 @@ const check = (
           out.push(`${path}[${i}] must be a mapping`);
           return;
         }
+        for (const key of Object.keys(entry))
+          if (!(key in spec.item))
+            out.push(`${path}[${i}] has unknown key ${JSON.stringify(key)}`);
         for (const [key, sub] of Object.entries(spec.item))
           check(get(entry, key), sub, `${path}[${i}].${key}`, out);
       });
@@ -220,7 +226,7 @@ export const schemaProblems = (docs: Doc[]): Finding[] => {
         list(get(doc.data, key)).forEach((entry, i) => {
           if (
             isObject(entry) &&
-            entry.status !== "planned" &&
+            !(key === "connects" && entry.status === "planned") &&
             !isText(entry.evidence)
           )
             out.push(`${key}[${i}] needs evidence`);

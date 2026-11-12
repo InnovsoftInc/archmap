@@ -60,6 +60,8 @@ export const unconfirmedLeads = (
   const evidenceFiles = new Set(
     docs.flatMap((d) => evidenceOf(d).map((c) => c.evidence.split("#")[0])),
   );
+  // An app is covered by a code entry that is its path or a path inside it;
+  // the root app (".") only by a code entry of ".".
   const codes = docs.flatMap((d) => list(d.data.code).map(str));
   const routes = new Set(
     docs.flatMap((d) =>
@@ -100,10 +102,14 @@ export const unconfirmedLeads = (
     if (evidenceFiles.has(lead.file)) return true;
     const [, kind, ...rest] = lead.key.split(":");
     const name = rest.join(":");
-    if (kind === "app")
+    if (kind === "app") {
+      const path = apps.get(lead.key) ?? name;
       return codes.some(
-        (c) => c !== undefined && c.includes(apps.get(lead.key) ?? name),
+        (c) =>
+          c !== undefined &&
+          (c === path || (path !== "." && c.startsWith(`${path}/`))),
       );
+    }
     if (kind === "route") return routes.has(routeOf.get(lead.key) ?? "");
     if (kind === "table") return tables.has(name);
     if (kind === "outside") return external.has(name.toLowerCase());

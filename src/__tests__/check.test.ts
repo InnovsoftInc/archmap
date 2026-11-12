@@ -215,6 +215,41 @@ describe("unconfirmedLeads", () => {
   });
 });
 
+describe("unconfirmedLeads: apps", () => {
+  const svc = (code: string[]) => ({
+    id: "x",
+    folder: "services" as const,
+    file: "services/x.md",
+    data: { code },
+    body: "",
+  });
+  const appLeads = (path: string, code: string[]) => {
+    const s = scan(root);
+    s.apps.push({ name: "a", path, deps: [], file: `${path}/package.json` });
+    return unconfirmedLeads(s, [svc(code)], [])
+      .map((l) => l.key)
+      .filter((k) => k.startsWith("scan:app:"));
+  };
+
+  it("confirms an app only by a code entry equal to its path or inside it", () => {
+    expect(appLeads("apps/api", ["apps/api"])).toEqual([]);
+    expect(appLeads("apps/api", ["apps/api/src"])).toEqual([]);
+    expect(appLeads("apps/api", ["apps/api-gateway"])).toEqual([
+      "scan:app:apps/api",
+    ]);
+    expect(appLeads("apps/api", ["old/apps/api"])).toEqual([
+      "scan:app:apps/api",
+    ]);
+    expect(appLeads("apps/api", ["apps"])).toEqual(["scan:app:apps/api"]);
+  });
+
+  it("confirms the root app only by a code entry of .", () => {
+    expect(appLeads(".", ["src/index.ts"])).toEqual(["scan:app:."]);
+    expect(appLeads(".", ["apps/web"])).toEqual(["scan:app:."]);
+    expect(appLeads(".", ["."])).toEqual([]);
+  });
+});
+
 describe("version", () => {
   it("warns when the pinned version differs", () => {
     expect(versionWarning({ name: "T", archmap: "0.0.1" })).toBe(

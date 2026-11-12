@@ -18,23 +18,27 @@ file's frontmatter.
 Each file is YAML frontmatter, then a markdown body. The frontmatter holds the
 facts the diagrams need:
 
-| Folder     | Frontmatter fields                                                                                                                                                                                       |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| every file | `name`, `status` (`live`, `planned` or `retiring`), `code` (the paths it covers; empty for `external` and `personas`)                                                                                    |
-| `services` | `kind` (`app`, `api`, `worker`, `job`); `connects` (`to`, `why`, `how`, `evidence`); `endpoints` (`route`, `evidence`); `jobs` (`name`, `schedule`, `evidence`); `libraries` (`name`, `why`, `evidence`) |
-| `stores`   | `kind` (`database`, `queue`, `bucket`, `cache`); `connects`; `tables` (`name`, `group`, `purpose`, `evidence`, `columns`); `enums` (`name`, `values`, `evidence`)                                        |
-| `external` | `kind` (`auth`, `email`, `payments`, `ai`, `hosting`, `other`)                                                                                                                                           |
-| `personas` | `roles` (the auth roles that map to it: `name`, `evidence`), `needs`                                                                                                                                     |
-| `flows`    | `persona`, `steps` (each `{ by, at, does }`, where `by` is a persona or service id and `at` is a service, store or external id)                                                                          |
+| Folder     | Frontmatter fields                                                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| every file | `name`, `status` (`live`, `planned` or `retiring`), `code` (the paths it covers; empty for `external` and `personas`)                                                                                              |
+| `services` | `kind` (`app`, `api`, `worker`, `job`); `connects` (`to`, `why`, `how`, `status`, `evidence`); `endpoints` (`route`, `evidence`); `jobs` (`name`, `schedule`, `evidence`); `libraries` (`name`, `why`, `evidence`) |
+| `stores`   | `kind` (`database`, `queue`, `bucket`, `cache`); `connects`; `tables` (`name`, `group`, `purpose`, `evidence`, `columns`); `enums` (`name`, `values`, `evidence`)                                                  |
+| `external` | `kind` (`auth`, `email`, `payments`, `ai`, `hosting`, `other`); `connects`                                                                                                                                         |
+| `personas` | `roles` (the auth roles that map to it: `name`, `evidence`), `needs`                                                                                                                                               |
+| `flows`    | `persona`, `steps` (each `{ by, at, does }`, where `by` is a persona or service id and `at` is a service, store or external id)                                                                                    |
 
 A column is `{ name, type, pk, unique, fk, enum, desc, evidence }`; a column's
 `enum` names an enum in the same store. `connects[].to` is the id of a service,
-store or external.
+store or external. A `connects` entry's `status` (`live`, `planned` or
+`retiring`, default `live`) marks a connection that is not built yet or is
+going away; no other list entry has a status. Any key not listed here is an
+error, in list entries too.
 
 **Evidence.** Every `connects`, `endpoints`, `jobs`, `tables` and `columns`
 entry, and every `roles` entry, has an `evidence` field: a repo-relative path,
-optionally with `#Symbol` (the symbol must appear in the file). A `planned`
-entry may leave it out. A column may leave it out when its table has it.
+optionally with `#Symbol` (the symbol must appear in the file). A file whose
+`status` is `planned`, or a `connects` entry whose `status` is `planned`, may
+leave it out. A column may leave it out when its table has it.
 
 ```yaml
 connects:
