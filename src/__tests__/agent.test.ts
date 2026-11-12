@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -10,7 +11,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { runAgent } from "../agent.ts";
 
 let root: string;
@@ -51,8 +60,11 @@ fs.mkdirSync("apps", { recursive: true });
 fs.writeFileSync("apps/other.ts", "export const changed = 1;\\n");
 `);
 
-beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), "archmap-agent-")));
+// Building the base repo takes several git calls, so it is built once and
+// copied for each test.
+let template: string;
+beforeAll(() => {
+  root = realpathSync(mkdtempSync(join(tmpdir(), "archmap-agent-template-")));
   git("init", "-q", "-b", "main");
   git("config", "user.name", "Test");
   git("config", "user.email", "test@example.com");
@@ -63,6 +75,12 @@ beforeEach(() => {
   write("apps/mine.ts", "export const mine = 1;\n");
   write("README.md", "hi\n");
   commit("base");
+  template = root;
+});
+afterAll(() => rmSync(template, { recursive: true, force: true }));
+beforeEach(() => {
+  root = realpathSync(mkdtempSync(join(tmpdir(), "archmap-agent-")));
+  cpSync(template, root, { recursive: true });
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
