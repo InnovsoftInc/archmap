@@ -110,6 +110,7 @@ export const init = (
     ci?: "github" | "azure";
     base?: string;
     cli?: string;
+    claude?: boolean;
   },
 ): Result => {
   const dir = opts.dir ?? "architecture";
@@ -211,6 +212,23 @@ export const init = (
         .replaceAll("__DIR__", rel),
     );
     lines.push(`Wrote ${to}.`);
+  }
+
+  if (opts.claude) {
+    // A project skill, so Claude Code users get /archmap; it is generated
+    // from the config, so running init again keeps it in step with cli and base.
+    const skill = join(".claude", "skills", "archmap", "SKILL.md");
+    const text = template("claude-skill.md")
+      .replaceAll("__CLI__", cli)
+      .replaceAll("__DIR__", rel)
+      .replaceAll("__BASE__", config.base ?? "main");
+    const path = join(root, skill);
+    if (existsSync(path) && readFileSync(path, "utf8") === text)
+      lines.push(`Kept ${skill}.`);
+    else {
+      write(path, text);
+      lines.push(`Wrote ${skill} (/archmap in Claude Code).`);
+    }
   }
 
   lines.push(`Next: ask your agent to run \`${cli} brief\` and follow it.`);

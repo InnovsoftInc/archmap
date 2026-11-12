@@ -128,6 +128,30 @@ describe("init", () => {
     expect(read("AGENTS.md")).not.toContain("tools/archmap.mjs");
   });
 
+  it("--claude writes the /archmap skill from the config, and keeps it in step", () => {
+    const skill = [".claude", "skills", "archmap", "SKILL.md"];
+    init(root, {});
+    expect(existsSync(join(root, ...skill))).toBe(false);
+
+    const r = init(root, { claude: true, base: "dev", dir: "docs/map" });
+    const text = read(...skill);
+    expect(r.lines).toContain(
+      "Wrote .claude/skills/archmap/SKILL.md (/archmap in Claude Code).",
+    );
+    expect(text).toMatch(/^---\nname: archmap\ndescription: .+\n---\n/);
+    expect(text).toContain(`${CLI} --dir docs/map brief --base dev`);
+    expect(text).toContain("`docs/map/`");
+    expect(text).not.toMatch(/__[A-Z]+__/);
+
+    expect(init(root, { claude: true, dir: "docs/map" }).lines).toContain(
+      "Kept .claude/skills/archmap/SKILL.md.",
+    );
+    init(root, { claude: true, dir: "docs/map", cli: "node a.mjs" });
+    expect(read(...skill)).toContain(
+      "node a.mjs --dir docs/map brief --base dev",
+    );
+  });
+
   it("writes .no-change to the .gitignore of a non-default folder", () => {
     init(root, { dir: "docs/map" });
     expect(read("docs", "map", ".gitignore")).toBe(".no-change\n");

@@ -49,7 +49,7 @@ Run them as `npx -y github:InnovsoftInc/archmap#v0.4.0 <command>`, written `arch
 
 | Command                                                                | What it does                                                                    |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `archmap init [--name] [--ci github\|azure] [--base <branch>] [--cli]` | Creates `architecture/`, the `AGENTS.md` section and, with `--ci`, the workflow |
+| `archmap init [--name] [--ci github\|azure] [--base <branch>] [--cli] [--claude]` | Creates `architecture/`, the `AGENTS.md` section, with `--ci` the workflow, and with `--claude` the `/archmap` skill |
 | `archmap scan [--json]`                                                | Lists leads from the code: one key per line, or JSON                            |
 | `archmap check [--json] [--strict] [--base <ref>]`                     | Validates the map and its evidence; with `--base`, the map gate (run it in CI)  |
 | `archmap brief [--task setup\|update\|review\|hosting] [--base <ref>]` | Prints the task for an agent to follow                                          |
@@ -62,7 +62,7 @@ All of them take `--dir <folder>` (default `architecture`). Every command except
 
 ## CI
 
-`init` records the branch pull requests target as `base` in the config (`--base <branch>`, else the branch `origin/HEAD` names, else `main`), adding it to an existing config that has none; the `AGENTS.md` section and the update brief use it. `--cli "<command>"` sets `cli`, the command agents are told to run (for example a local checkout of archmap instead of `npx`), before the `AGENTS.md` section is written. Wherever a base is compared with, a branch that exists only as `origin/<branch>` is used from there. `init --ci github` (or `azure`) writes two jobs for pull requests:
+`init` records the branch pull requests target as `base` in the config (`--base <branch>`, else the branch `origin/HEAD` names, else `main`), adding it to an existing config that has none; the `AGENTS.md` section and the update brief use it. `--cli "<command>"` sets `cli`, the command agents are told to run (for example a local checkout of archmap instead of `npx`), before the `AGENTS.md` section is written. `--claude` also writes `.claude/skills/archmap/SKILL.md`, a project skill that gives Claude Code users `/archmap`: it tells the agent which `brief` to run and to `check` until it passes. It is generated from the config, so run `init --claude` again after changing `cli`, `base` or the map folder. Other agents use the `AGENTS.md` section, which says the same. Wherever a base is compared with, a branch that exists only as `origin/<branch>` is used from there. `init --ci github` (or `azure`) writes two jobs for pull requests:
 
 1. `check` (required, no AI) runs `archmap check --base origin/<base branch>`. It fails when the PR changes the architecture but neither the map nor an `Archmap: none - <reason>` commit trailer records it.
 2. `map` (not required) runs `archmap agent --base origin/<base branch>` with the AI key from a CI secret and pushes the map edit to the PR branch, so reviewers see it next to the code. It never blocks a merge.
