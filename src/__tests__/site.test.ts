@@ -366,6 +366,37 @@ Inline <b onmouseover=alert(1)>bold</b>.
     }
   });
 
+  it("renders only http, https, mailto, relative and #anchor links and images", () => {
+    write("archmap.config.json", '{"name":"Acme"}');
+    write(
+      "README.md",
+      [
+        "# Acme",
+        "",
+        "[x](javascript:alert(1)) ![y](data:text/html,<b>hi</b>)",
+        "[z](JavaScript:alert(2)) [w](&#106;avascript:alert(3)) <javascript:alert(4)>",
+        "[ok](https://example.com) [mail](mailto:a@b.c) [rel](docs/a.md) [top](#top)",
+        "![logo](img/logo.png)",
+      ].join("\n"),
+    );
+    for (const opts of [{}, { public: true }]) {
+      const data = JSON.parse(siteData(root, dir, opts)) as { readme: string };
+      const readme = data.readme;
+      // Unsafe links keep their text; no attribute carries them.
+      expect(readme).not.toMatch(
+        /(?:href|src)="(?!https:|mailto:|docs\/|#|img\/)/,
+      );
+      expect(readme).toContain("<p>x y\nz w javascript:alert(4)\n");
+      expect(readme).toContain('<a href="https://example.com">ok</a>');
+      expect(readme).toContain('<a href="mailto:a@b.c">mail</a>');
+      expect(readme).toContain('<a href="docs/a.md">rel</a>');
+      expect(readme).toContain('<a href="#top">top</a>');
+      expect(readme).toContain('<img src="img/logo.png" alt="logo">');
+      expect((readme.match(/<a /g) ?? []).length).toBe(4);
+      expect((readme.match(/<img /g) ?? []).length).toBe(1);
+    }
+  });
+
   it("a normal build keeps dev text and code", () => {
     seed();
     const out = join(root, "site");

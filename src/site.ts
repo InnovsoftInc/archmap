@@ -31,11 +31,48 @@ const escapeHtml = (s: string): string =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+// A link or image keeps only these schemes; a URL with no scheme (a relative
+// path or #anchor) is fine. Control characters and whitespace are dropped
+// first, as browsers do, so "java\tscript:" is caught too.
+const SAFE_SCHEME = /^(?:https?|mailto):/i;
+const SCHEME = /^[a-z][a-z\d+.-]*:/i;
+// marked leaves character references in a URL as written, and the browser
+// decodes them in the attribute, so "&#106;avascript:" must be read as
+// "javascript:". No named reference stands for a plain letter; these are the
+// ones for the separators.
+const NAMED = new Map([
+  ["colon", ":"],
+  ["tab", "\t"],
+  ["newline", "\n"],
+]);
+const REFERENCE = /&(#x[\da-f]+|#\d+|colon|tab|newline);?/gi;
+const decoded = (href: string): string =>
+  href.replace(REFERENCE, (_, ref: string) => {
+    const lower = ref.toLowerCase();
+    if (!lower.startsWith("#")) return NAMED.get(lower) ?? "";
+    const code = lower.startsWith("#x")
+      ? parseInt(lower.slice(2), 16)
+      : parseInt(lower.slice(1), 10);
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+  });
+const safeUrl = (href: string): boolean => {
+  // eslint-disable-next-line no-control-regex -- stripping them is the point
+  const url = decoded(href).replace(/[\u0000-\u0020\u007f]/g, "");
+  return SAFE_SCHEME.test(url) || !SCHEME.test(url);
+};
+
 // The map is written by agents and anyone with commit access, and the viewer
 // puts this HTML straight into the page, so raw HTML in the markdown is shown
-// as text, never as markup.
+// as text, never as markup, and a link or image with any other scheme
+// (javascript:, data:) is shown as its text.
 const markdown = new Marked({
-  renderer: { html: ({ text }) => escapeHtml(text) },
+  renderer: {
+    html: ({ text }) => escapeHtml(text),
+    link({ href, tokens }) {
+      return safeUrl(href) ? false : this.parser.parseInline(tokens);
+    },
+    image: ({ href, text }) => (safeUrl(href) ? false : escapeHtml(text)),
+  },
 });
 
 const html = (md: string | undefined): string | undefined =>
