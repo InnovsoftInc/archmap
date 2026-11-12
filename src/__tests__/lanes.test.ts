@@ -27,7 +27,8 @@ describe("lanes", () => {
     expect(at(doc("services", "api", { kind: "api" }))).toBe("backend");
     expect(at(doc("services", "jobs", { kind: "job" }))).toBe("backend");
     expect(at(doc("stores", "db", { kind: "database" }))).toBe("backend");
-    expect(at(doc("external", "azure", { kind: "hosting" }))).toBe("platform");
+    for (const kind of ["hosting", "secrets", "monitoring", "ci", "dns"])
+      expect(at(doc("external", "x", { kind }))).toBe("platform");
     expect(at(doc("external", "mail", { kind: "email" }))).toBe("third_party");
     expect(
       at(doc("external", "old", { kind: "other", status: "retiring" })),

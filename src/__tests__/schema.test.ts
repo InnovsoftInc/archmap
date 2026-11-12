@@ -200,7 +200,7 @@ describe("schemaProblems", () => {
   it("checks external kind", () => {
     const d = doc("external", "x", live("X", { kind: "mystery" }));
     expect(messages([d])).toContain(
-      'kind "mystery" must be one of auth, email, payments, ai, hosting, other',
+      'kind "mystery" must be one of auth, email, payments, ai, hosting, secrets, monitoring, ci, dns, other',
     );
   });
 

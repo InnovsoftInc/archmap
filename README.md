@@ -41,7 +41,7 @@ architecture/
 
 The file name is the id. Frontmatter holds the facts the diagrams need (kind, status, connections, endpoints, tables) and each carries `evidence`: a file path, optionally with `#Symbol` (a whole identifier of at least 3 characters). The body explains in plain language: a summary, then `## How it works`, then `## For developers`. The map describes the current state; history is `git log architecture/`.
 
-The overview follows the C4 model's container view: the project's boundary holds **Frontend** (what people use), **Backend** (APIs, workers, jobs and the data they keep) and **Platform and delivery** (hosting, CI/CD, secrets, monitoring); outside it sit **Third-party and partners** and **Legacy** (systems being replaced). Each file is placed from its folder, kind and status, so agents don't choose; a file can set `lane` to go elsewhere, and a project can replace the lanes in `archmap.config.json`:
+The overview follows the C4 model's container view: the project's boundary holds **Frontend** (what people use), **Backend** (APIs, workers, jobs and the data they keep) and **Platform and delivery** (hosting, CI/CD, secrets, monitoring, DNS: external `kind` `hosting`, `ci`, `secrets`, `monitoring` or `dns`); outside it sit **Third-party and partners** and **Legacy** (systems being replaced). Each file is placed from its folder, kind and status, so agents don't choose; a file can set `lane` to go elsewhere, and a project can replace the lanes in `archmap.config.json`:
 
 ```json
 "lanes": [

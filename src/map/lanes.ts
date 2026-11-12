@@ -65,12 +65,16 @@ export const lanesOf = (config: MapConfig): Lane[] => {
   return lanes.some((l) => !l.outside) ? lanes : DEFAULT_LANES;
 };
 
+// Outside services the project runs on rather than talks to.
+const PLATFORM_KINDS = new Set(["hosting", "secrets", "monitoring", "ci", "dns"]);
+
 /** The lane a file goes in by default, from its folder, kind and status. */
 const derived = (doc: Doc): { id: string; outside: boolean } => {
   const kind = doc.data.kind;
   if (doc.folder === "external") {
     if (doc.data.status === "retiring") return { id: "legacy", outside: true };
-    if (kind === "hosting") return { id: "platform", outside: false };
+    if (typeof kind === "string" && PLATFORM_KINDS.has(kind))
+      return { id: "platform", outside: false };
     return { id: "third_party", outside: true };
   }
   if (doc.folder === "services" && kind === "app")
