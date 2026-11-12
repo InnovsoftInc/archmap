@@ -14,7 +14,7 @@ Run this once from the project root (Node 24 or newer), with the latest release 
 npx -y github:InnovsoftInc/archmap#v0.4.0 init
 ```
 
-`InnovsoftInc/archmap` is `HOME_REPO` in `src/home.ts`, and changes when the repo moves to tttstudios. `init` creates `architecture/` with `archmap.config.json` (pinned to this version) and a starter `README.md`, and adds an archmap section to `AGENTS.md` (plus `@AGENTS.md` in an existing `CLAUDE.md`). Add `--ci github` or `--ci azure` to write the PR workflow too.
+`init` creates `architecture/` with `archmap.config.json` (pinned to this version) and a starter `README.md`, and adds an archmap section to `AGENTS.md` (plus `@AGENTS.md` in an existing `CLAUDE.md`). Add `--ci github` or `--ci azure` to write the PR workflow too.
 
 Then ask your agent to run `brief` and follow it:
 
@@ -62,6 +62,17 @@ All of them take `--dir <folder>` (default `architecture`). Every command except
 
 1. `check` (required, no AI) runs `archmap check --base origin/<base branch>`. It fails when the PR changes the architecture but neither the map nor an `Archmap: none - <reason>` commit trailer records it.
 2. `map` (not required) runs `archmap agent --base origin/<base branch>` with the AI key from a CI secret and pushes the map edit to the PR branch, so reviewers see it next to the code. It never blocks a merge.
+
+### Secrets (GitHub)
+
+Add two repository secrets for the `map` job:
+
+- `ANTHROPIC_API_KEY`, or whatever key your `agent.command` needs (change the env name in the workflow if you use another agent).
+- `ARCHMAP_PUSH_TOKEN`: a GitHub App or fine-grained token with contents write. A push made with the default `GITHUB_TOKEN` starts no new run, so the required `check` job would be missing on the new head. Without this secret the job commits but does not push, and ends with a warning telling you to add it.
+
+### Azure Pipelines
+
+Add `ANTHROPIC_API_KEY` (or your agent's key) as a secret pipeline variable. The build service identity needs Contribute permission on the repo so the `map` job can push. Azure Repos does not start PR pipelines from the YAML alone: add the pipeline as a build validation in the target branch's branch policy, and make it required so `check` gates the merge.
 
 Other CI systems run the same two commands.
 
