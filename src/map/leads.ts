@@ -59,8 +59,27 @@ const toLead = (r: Raw): Lead => ({
 
 export const leadsOf = (s: Scan): Lead[] => rawLeads(s).map(toLead);
 
+// `**` is any run of folders, `*` and `?` stay inside one folder. Unlike
+// path.matchesGlob, these also match dotfiles (`.archmap-local/**` covers
+// `.env.sample`); matchesGlob still handles anything else, such as `{a,b}`.
+const globRegex = (pattern: string): RegExp => {
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern.charAt(i);
+    if (c === "*" && pattern.charAt(i + 1) === "*") {
+      const slash = pattern.charAt(i + 2) === "/";
+      out += slash ? "(?:.*/)?" : ".*";
+      i += slash ? 2 : 1;
+    } else if (c === "*") out += "[^/]*";
+    else if (c === "?") out += "[^/]";
+    else out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  // eslint-disable-next-line security/detect-non-literal-regexp -- escaped
+  return new RegExp(`^${out}$`, "s");
+};
+
 const fileMatches = (file: string, pattern: string): boolean => {
-  if (file === pattern) return true;
+  if (file === pattern || globRegex(pattern).test(file)) return true;
   try {
     return matchesGlob(file, pattern);
   } catch {

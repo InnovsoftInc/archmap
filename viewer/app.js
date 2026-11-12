@@ -1843,6 +1843,16 @@ function stepTo(i) {
 function problemCount() {
   return CHECK.errors.length + CHECK.warnings.length;
 }
+// Errors break the map; warnings are mostly leads from the code scan that no
+// map entry confirms yet, so they are counted and named apart.
+function checkSummary() {
+  var e = CHECK.errors.length,
+    w = CHECK.warnings.length,
+    parts = [];
+  if (e) parts.push(e + (e === 1 ? " error" : " errors"));
+  if (w) parts.push(w + " to confirm");
+  return parts.join(" · ");
+}
 function renderChrome() {
   renderCrumbs();
   $("chips").hidden = view !== "schema";
@@ -1850,7 +1860,7 @@ function renderChrome() {
   $("bEnums").hidden = view !== "schema";
   $("personas").hidden = view !== "schema";
   var B = VM.B,
-    n = problemCount(),
+    n = checkSummary(),
     tops = VM.services.filter(function (x) {
       return !x.s.parent;
     }).length;
@@ -1863,10 +1873,10 @@ function renderChrome() {
     (Object.keys(B.flows).length === 1 ? " flow" : " flows");
   if (n)
     sub +=
-      ' · <button type="button" id="subProb">' +
+      ' · <button type="button" id="subProb"' +
+      (CHECK.errors.length ? ' class="has-errors"' : "") +
+      ">" +
       n +
-      " problem" +
-      (n === 1 ? "" : "s") +
       "</button>";
   $("sub").innerHTML = sub;
   if ($("subProb")) $("subProb").onclick = openProblems;
@@ -2001,7 +2011,7 @@ function navLabel(st) {
       enums: "Enum types",
       flows: "Flows",
       flow: VM && VM.FL[st.id] ? VM.FL[st.id].f.name : "Flow",
-      problems: "Problems",
+      problems: "Check",
     }[st.type] || "previous"
   );
 }
@@ -2508,10 +2518,16 @@ function openProblems() {
       );
     };
   };
+  var head = function (title, n) {
+    return n ? "<h3>" + title + " · " + n + "</h3>" : "";
+  };
   showPanel(
-    "Problems · " + problemCount(),
-    '<p class="lead">What <code>archmap check</code> found in the map files. Errors first, then warnings.</p>' +
+    "Check · " + checkSummary(),
+    '<p class="lead">What <code>archmap check</code> found. Errors are mistakes in the map files and must be fixed. ' +
+      "To confirm lists what the code scan found that no map entry covers yet: add it to the map with evidence, or to <code>ignore</code> if it doesn&rsquo;t belong.</p>" +
+      head("Errors", CHECK.errors.length) +
       CHECK.errors.map(line("gap")).join("") +
+      head("To confirm", CHECK.warnings.length) +
       CHECK.warnings.map(line("open")).join(""),
     false,
     { type: "problems" },

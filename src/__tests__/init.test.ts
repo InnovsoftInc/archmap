@@ -108,6 +108,26 @@ describe("init", () => {
     expect(r.lines.at(-1)).toContain(`${CLI} --dir docs/map brief`);
   });
 
+  it("--cli sets cli before AGENTS.md is written, on a new or an existing config", () => {
+    const r = init(root, { cli: "node tools/archmap.mjs" });
+    const config = JSON.parse(read("architecture", "archmap.config.json")) as {
+      cli?: string;
+      base?: string;
+    };
+    expect(Object.keys(config).slice(0, 3)).toEqual(["archmap", "name", "cli"]);
+    expect(config.cli).toBe("node tools/archmap.mjs");
+    expect(config.base).toBe("main");
+    expect(read("AGENTS.md")).toContain("node tools/archmap.mjs brief --base");
+    expect(r.lines.at(-1)).toContain("node tools/archmap.mjs brief");
+
+    const again = init(root, { cli: "node other.mjs" });
+    expect(again.lines).toContain(
+      "Set cli to node other.mjs in architecture/archmap.config.json.",
+    );
+    expect(read("AGENTS.md")).toContain("node other.mjs brief --base");
+    expect(read("AGENTS.md")).not.toContain("tools/archmap.mjs");
+  });
+
   it("writes .no-change to the .gitignore of a non-default folder", () => {
     init(root, { dir: "docs/map" });
     expect(read("docs", "map", ".gitignore")).toBe(".no-change\n");

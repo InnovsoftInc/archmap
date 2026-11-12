@@ -277,6 +277,25 @@ describe("unconfirmedLeads", () => {
     expect(left(["scan:route:POST *"])).toHaveLength(2);
   });
 
+  it("matches dotfiles and dot folders in the file part of an ignore entry", () => {
+    const s = scan(root);
+    s.outside.push(
+      { name: "REDIS_URL", via: "env", file: ".vendor/x/.env.sample" },
+      { name: "API_URL", via: "env", file: "apps/api/.env.example" },
+    );
+    const left = (ignore: string[]) =>
+      unconfirmedLeads(s, [], ignore)
+        .map((l) => l.key)
+        .filter((k) => k.includes("_URL"));
+    expect(left(["scan:*@.vendor/**"])).toEqual([
+      "scan:outside:API_URL@apps/api/.env.example",
+    ]);
+    expect(left(["scan:*@**/.env.*"])).toEqual([]);
+    expect(left(["scan:*@apps/*/.env.example"])).toEqual([
+      "scan:outside:REDIS_URL@.vendor/x/.env.sample",
+    ]);
+  });
+
   it("matches routes ignoring method case and a trailing slash", () => {
     repo();
     const s = scan(root);

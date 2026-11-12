@@ -93,6 +93,15 @@ const withBlock = (text: string, block: string): string => {
   return `${text}${lead}${block}\n`;
 };
 
+// `cli` goes right after `name`, where the README's example has it.
+const withCli = (config: MapConfig, cli: string): MapConfig => {
+  const { archmap, name, ...rest } = config;
+  // `rest` still holds the old cli, which would win the spread.
+  const next: MapConfig = { archmap, name, cli, ...rest };
+  next.cli = cli;
+  return next;
+};
+
 export const init = (
   root: string,
   opts: {
@@ -100,6 +109,7 @@ export const init = (
     name?: string;
     ci?: "github" | "azure";
     base?: string;
+    cli?: string;
   },
 ): Result => {
   const dir = opts.dir ?? "architecture";
@@ -122,10 +132,18 @@ export const init = (
     }
     // --base changes the base; a config without one gets the detected one.
     const base = opts.base ?? config.base ?? defaultBase(root);
+    const changed: string[] = [];
     if (config.base !== base) {
       config = { ...config, base };
+      changed.push(`base to ${base}`);
+    }
+    if (opts.cli !== undefined && config.cli !== opts.cli) {
+      config = withCli(config, opts.cli);
+      changed.push(`cli to ${opts.cli}`);
+    }
+    if (changed.length) {
       write(configPath, `${JSON.stringify(config, null, 2)}\n`);
-      lines.push(`Set base to ${base} in ${rel}/archmap.config.json.`);
+      lines.push(`Set ${changed.join(" and ")} in ${rel}/archmap.config.json.`);
     } else lines.push(`Kept the existing ${rel}/archmap.config.json.`);
   } else {
     const name =
@@ -140,8 +158,12 @@ export const init = (
       .replace("__VERSION__", VERSION)
       .replace("__NAME__", () => json(name))
       .replace("__BASE__", () => json(opts.base ?? defaultBase(root)));
-    write(configPath, text);
     config = JSON.parse(text) as MapConfig;
+    if (opts.cli !== undefined) config = withCli(config, opts.cli);
+    write(
+      configPath,
+      opts.cli === undefined ? text : `${JSON.stringify(config, null, 2)}\n`,
+    );
     lines.push(`Wrote ${rel}/archmap.config.json (archmap ${VERSION}).`);
   }
   const cli = cliCommand(config, dir, root);

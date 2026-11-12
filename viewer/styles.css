@@ -215,6 +215,9 @@ button {
   cursor: pointer;
   text-decoration: underline;
 }
+.title p button.has-errors {
+  color: var(--del-fg);
+}
 .tabs {
   display: inline-flex;
   border: 1px solid var(--line);

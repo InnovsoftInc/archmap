@@ -28,7 +28,7 @@ const HELP = `archmap: an architecture map kept as markdown files in your repo.
 
 Usage: archmap <command> [options]
 
-  init [--name "Project"] [--ci github|azure] [--base <branch>]
+  init [--name "Project"] [--ci github|azure] [--base <branch>] [--cli "<command>"]
                                  Create architecture/, the AGENTS.md section and,
                                  with --ci, the PR workflow; --base is the branch
                                  PRs target (default: origin/HEAD, else main)
@@ -82,6 +82,7 @@ const main = async (argv: string[]): Promise<void> => {
       port: { type: "string" },
       task: { type: "string" },
       base: { type: "string" },
+      cli: { type: "string" },
       json: { type: "boolean" },
       strict: { type: "boolean" },
       public: { type: "boolean" },
@@ -109,6 +110,7 @@ const main = async (argv: string[]): Promise<void> => {
           name: values.name,
           ci,
           base: values.base,
+          cli: values.cli,
         }),
       );
     }
