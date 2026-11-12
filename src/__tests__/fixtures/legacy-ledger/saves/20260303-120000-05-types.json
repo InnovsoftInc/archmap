@@ -1,0 +1,142 @@
+{
+  "at": "2026-03-03T12:00:00Z",
+  "author": "fixture",
+  "summary": "Give each box a type",
+  "ops": [
+    {
+      "id": "web",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "app"
+      }
+    },
+    {
+      "id": "api",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "app"
+      }
+    },
+    {
+      "id": "jobs",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "job"
+      }
+    },
+    {
+      "id": "storage",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "group"
+      }
+    },
+    {
+      "id": "postgres",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "store"
+      }
+    },
+    {
+      "id": "blob",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "store"
+      }
+    },
+    {
+      "id": "blob_docs",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "container"
+      }
+    },
+    {
+      "id": "keyvault",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "platform"
+      }
+    },
+    {
+      "id": "monitor",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "platform"
+      }
+    },
+    {
+      "id": "edge",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "platform"
+      }
+    },
+    {
+      "id": "mailer",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "external"
+      }
+    },
+    {
+      "id": "payments",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "external"
+      }
+    },
+    {
+      "id": "sms",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "external"
+      }
+    },
+    {
+      "id": "old_site",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "external"
+      }
+    },
+    {
+      "id": "old_ledger_db",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "type": "store"
+      }
+    }
+  ]
+}

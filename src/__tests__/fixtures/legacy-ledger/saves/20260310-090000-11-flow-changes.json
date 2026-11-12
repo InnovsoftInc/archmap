@@ -1,0 +1,46 @@
+{
+  "at": "2026-03-10T09:00:00Z",
+  "author": "fixture",
+  "summary": "Flow changes",
+  "ops": [
+    {
+      "id": "boater_books",
+      "kind": "flow",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "steps": [
+          {
+            "from": "persona:boater",
+            "to": "web",
+            "label": "Picks dates and a berth"
+          },
+          {
+            "from": "web",
+            "to": "api",
+            "label": "Holds the berth"
+          },
+          {
+            "from": "api",
+            "to": "postgres",
+            "label": "Saves the booking"
+          },
+          {
+            "from": "api",
+            "to": "mailer",
+            "label": "Sends the confirmation"
+          },
+          {
+            "from": "api"
+          }
+        ]
+      }
+    },
+    {
+      "id": "staff_reports",
+      "kind": "flow",
+      "op": "remove",
+      "reason": "Reporting moves into the new app; the old flow no longer applies."
+    }
+  ]
+}

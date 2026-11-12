@@ -1,0 +1,21 @@
+{
+  "versions": [
+    {
+      "id": "baseline",
+      "name": "Baseline",
+      "published_at": "2026-03-05T12:00:00Z",
+      "summary": "The map as first recorded.",
+      "saves": [
+        "20260301-090000-01-areas-enums",
+        "20260301-090100-02-tables",
+        "20260302-100000-03-model-fixes",
+        "20260303-110000-04-services",
+        "20260303-120000-05-types",
+        "20260304-090000-06-parts",
+        "20260304-100000-07-connections",
+        "20260305-090000-08-personas",
+        "20260305-100000-09-updates"
+      ]
+    }
+  ]
+}

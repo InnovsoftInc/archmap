@@ -1,0 +1,225 @@
+{
+  "at": "2026-03-01T09:01:00Z",
+  "author": "fixture",
+  "summary": "Baseline tables",
+  "ops": [
+    {
+      "id": "member",
+      "kind": "table",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "append": false,
+        "area": "people",
+        "order": 1,
+        "purpose": "One row per person with an account.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "pk": true
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "unique": true,
+            "desc": "Sign-in address."
+          },
+          {
+            "name": "role",
+            "type": "text",
+            "enum": "member_role"
+          },
+          {
+            "name": "fax",
+            "type": "text",
+            "desc": "Nobody sends faxes any more."
+          }
+        ]
+      }
+    },
+    {
+      "id": "vessel",
+      "kind": "table",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "append": false,
+        "area": "people",
+        "order": 2,
+        "purpose": "Boats a member owns.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "pk": true
+          },
+          {
+            "name": "member_id",
+            "type": "uuid",
+            "fk": "member"
+          },
+          {
+            "name": "length_m",
+            "type": "numeric",
+            "desc": "Length overall in metres."
+          }
+        ]
+      }
+    },
+    {
+      "id": "berth",
+      "kind": "table",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "append": false,
+        "area": "berths",
+        "order": 1,
+        "purpose": "A place a boat can tie up.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "pk": true
+          },
+          {
+            "name": "code",
+            "type": "text",
+            "unique": true
+          },
+          {
+            "name": "size",
+            "type": "text",
+            "enum": "berth_size"
+          },
+          {
+            "name": "tags",
+            "type": "text",
+            "array": true,
+            "desc": "Free labels such as shore-power."
+          }
+        ]
+      }
+    },
+    {
+      "id": "booking",
+      "kind": "table",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "append": false,
+        "area": "berths",
+        "order": 2,
+        "purpose": "A berth held for a vessel over some nights.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "pk": true
+          },
+          {
+            "name": "berth_id",
+            "type": "uuid",
+            "fk": "berth"
+          },
+          {
+            "name": "vessel_id",
+            "type": "uuid",
+            "fk": "vessel"
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "enum": "booking_status"
+          }
+        ]
+      }
+    },
+    {
+      "id": "booking_event",
+      "kind": "table",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "append": true,
+        "area": "berths",
+        "order": 3,
+        "purpose": "Every change to a booking.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "pk": true
+          },
+          {
+            "name": "booking_id",
+            "type": "uuid",
+            "fk": "booking"
+          },
+          {
+            "name": "at",
+            "type": "timestamptz"
+          }
+        ]
+      }
+    },
+    {
+      "id": "invoice",
+      "kind": "table",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "append": false,
+        "area": "billing",
+        "order": 1,
+        "purpose": "What a member owes for a booking.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "pk": true
+          },
+          {
+            "name": "booking_id",
+            "type": "uuid",
+            "fk": "booking"
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "enum": "invoice_status"
+          },
+          {
+            "name": "total_cents",
+            "type": "int"
+          }
+        ]
+      }
+    },
+    {
+      "id": "contact_log",
+      "kind": "table",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "append": true,
+        "area": "people",
+        "order": 3,
+        "purpose": "Calls and faxes.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "pk": true
+          },
+          {
+            "name": "kind",
+            "type": "text",
+            "enum": "old_contact_type"
+          }
+        ]
+      }
+    }
+  ]
+}

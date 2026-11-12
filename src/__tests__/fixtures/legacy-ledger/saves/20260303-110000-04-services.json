@@ -1,0 +1,291 @@
+{
+  "at": "2026-03-03T11:00:00Z",
+  "author": "fixture",
+  "summary": "Baseline services",
+  "ops": [
+    {
+      "id": "frontend",
+      "kind": "category",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Frontend",
+        "order": 1,
+        "purpose": "What boaters and harbour staff use."
+      }
+    },
+    {
+      "id": "backend",
+      "kind": "category",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Backend",
+        "order": 2,
+        "purpose": "The server side."
+      }
+    },
+    {
+      "id": "platform",
+      "kind": "category",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Platform",
+        "order": 3,
+        "purpose": "Cloud pieces we run on."
+      }
+    },
+    {
+      "id": "third_party",
+      "kind": "category",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Third party",
+        "order": 4,
+        "purpose": "Services we use but don't run."
+      }
+    },
+    {
+      "id": "legacy",
+      "kind": "category",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Legacy",
+        "order": 5,
+        "purpose": "What we are replacing."
+      }
+    },
+    {
+      "id": "web",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "frontend",
+        "name": "Web app",
+        "order": 1,
+        "status": "in build",
+        "purpose": "Where boaters book berths and staff run the harbour.",
+        "tech": "React 19 \u00b7 Vite",
+        "env": "dev, staging, production",
+        "docs": [
+          {
+            "label": "apps/web",
+            "url": "https://github.com/example/harbor-slips/tree/main/apps/web"
+          }
+        ],
+        "facts": [
+          {
+            "k": "Hosting",
+            "v": "Served from the app container"
+          }
+        ]
+      }
+    },
+    {
+      "id": "api",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "name": "API",
+        "order": 1,
+        "status": "in build",
+        "purpose": "The back end the web app talks to.",
+        "tech": "Node 24 \u00b7 Express",
+        "notes": "One container image runs the API and serves the web app.",
+        "docs": [
+          {
+            "label": "apps/api",
+            "url": "https://github.com/example/harbor-slips/tree/main/apps/api/"
+          }
+        ]
+      }
+    },
+    {
+      "id": "jobs",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "name": "Scheduled jobs",
+        "order": 3,
+        "status": "planned",
+        "purpose": "Work that runs on a timer."
+      }
+    },
+    {
+      "id": "storage",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "name": "Storage",
+        "order": 2,
+        "status": "in build",
+        "purpose": "Where the data lives.",
+        "tech": "PostgreSQL \u00b7 Blob storage"
+      }
+    },
+    {
+      "id": "postgres",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "storage",
+        "name": "Bookings database",
+        "order": 1,
+        "status": "in build",
+        "tech": "PostgreSQL 17",
+        "purpose": "Members, berths, bookings and invoices."
+      }
+    },
+    {
+      "id": "blob",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "storage",
+        "name": "File storage",
+        "order": 2,
+        "status": "in build",
+        "tech": "Blob storage",
+        "purpose": "Uploaded documents."
+      }
+    },
+    {
+      "id": "blob_docs",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "blob",
+        "name": "documents",
+        "order": 1,
+        "purpose": "Insurance certificates and vessel photos."
+      }
+    },
+    {
+      "id": "keyvault",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "platform",
+        "name": "Key Vault",
+        "order": 1,
+        "status": "live",
+        "purpose": "Holds secrets for every environment."
+      }
+    },
+    {
+      "id": "monitor",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "platform",
+        "name": "Monitoring",
+        "order": 2,
+        "status": "live",
+        "purpose": "Logs, metrics and alerts."
+      }
+    },
+    {
+      "id": "edge",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "platform",
+        "name": "Edge gateway",
+        "order": 3,
+        "status": "planned",
+        "purpose": "The single front door with a firewall."
+      }
+    },
+    {
+      "id": "mailer",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "third_party",
+        "name": "Mail service",
+        "order": 1,
+        "status": "live",
+        "purpose": "Sends booking emails."
+      }
+    },
+    {
+      "id": "payments",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "third_party",
+        "name": "Card payments",
+        "order": 2,
+        "status": "planned",
+        "purpose": "Takes card payments for invoices."
+      }
+    },
+    {
+      "id": "sms",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "third_party",
+        "name": "Text messages",
+        "order": 3,
+        "status": "live",
+        "purpose": "Sends arrival reminders by text."
+      }
+    },
+    {
+      "id": "old_site",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "legacy",
+        "name": "Old booking site",
+        "order": 1,
+        "status": "retiring",
+        "purpose": "Today's booking site, replaced at launch."
+      }
+    },
+    {
+      "id": "old_ledger_db",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "legacy",
+        "name": "Old ledger database",
+        "order": 2,
+        "status": "live",
+        "tech": "SQL Server",
+        "purpose": "The old site's database; staff still report from it.",
+        "facts": [
+          {
+            "k": "Tables",
+            "v": "9, no foreign keys"
+          }
+        ]
+      }
+    }
+  ]
+}

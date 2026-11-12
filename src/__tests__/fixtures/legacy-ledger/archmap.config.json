@@ -1,0 +1,24 @@
+{
+  "name": "Harbor Slips",
+  "product": "Architecture map",
+  "labels": {
+    "boundary": "Harbor Slips",
+    "boundarySub": "what we build and run",
+    "outside": "Outside Harbor Slips",
+    "outsideSub": "services we use or replace"
+  },
+  "theme": {
+    "light": {
+      "--accent": "#0a7d4f"
+    },
+    "dark": {
+      "--accent": "#4fd1a0"
+    }
+  },
+  "links": [
+    {
+      "label": "Repo",
+      "url": "https://github.com/example/harbor-slips"
+    }
+  ]
+}

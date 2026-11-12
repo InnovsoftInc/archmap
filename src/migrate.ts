@@ -203,7 +203,15 @@ const draftsFrom = (m: Model): { drafts: Draft[]; lines: string[] } => {
       push(owner, "endpoints", { route });
       if (route !== name)
         owner.bullets.push(bullet(`${name} (${route})`, purpose));
-    } else if (s.type === "job" && isService) push(owner, "jobs", { name });
+      else if (purpose) owner.bullets.push(bullet(name, purpose));
+    } else if (s.type === "job" && isService) {
+      push(
+        owner,
+        "jobs",
+        compact({ name, schedule: text(s.schedule) ?? text(s.tech) }),
+      );
+      if (purpose) owner.bullets.push(bullet(name, purpose));
+    }
     else if ((s.type === "library" || s.type === "tool") && isService)
       push(owner, "libraries", compact({ name, why: purpose }));
     else
@@ -384,6 +392,21 @@ const collisions = (drafts: Draft[]): string[] => {
     );
 };
 
+/** The parsed config, or the reason it can't be used. */
+const readConfig = (path: string): Entry | string => {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch (err) {
+    return `archmap.config.json: ${(err as Error).message}`;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return "archmap.config.json: must be a JSON object";
+  const config = raw as Entry;
+  if (!text(config.name)) return 'archmap.config.json: "name" is required';
+  return config;
+};
+
 const hasMarkdown = (dir: string): boolean =>
   existsSync(dir) && readdirSync(dir).some((n) => n.endsWith(".md"));
 
@@ -410,6 +433,11 @@ export const migrate = (root: string, dir: string): Result => {
   } catch (err) {
     return { ok: false, lines: [(err as Error).message] };
   }
+  // The config is rewritten at the end, so check it before writing anything.
+  const configPath = join(mapDir, "archmap.config.json");
+  const config = readConfig(configPath);
+  if (typeof config === "string")
+    return { ok: false, lines: ["Nothing was written.", config] };
   const m = replay(project.saves);
   const { drafts, lines: dropped } = draftsFrom(m);
   const clashes = collisions(drafts);
@@ -427,8 +455,6 @@ export const migrate = (root: string, dir: string): Result => {
     `Wrote ${FOLDERS.map((f) => `${counts.get(f) ?? 0} ${f}`).join(", ")} to ${rel}.`,
   );
 
-  const configPath = join(mapDir, "archmap.config.json");
-  const config = JSON.parse(readFileSync(configPath, "utf8")) as Entry;
   config.archmap = VERSION;
   writeJson(configPath, config);
   lines.push(`Pinned ${rel}/archmap.config.json to archmap ${VERSION}.`);

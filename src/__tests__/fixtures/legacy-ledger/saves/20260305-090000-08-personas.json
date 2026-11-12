@@ -1,0 +1,95 @@
+{
+  "at": "2026-03-05T09:00:00Z",
+  "author": "fixture",
+  "summary": "Personas",
+  "ops": [
+    {
+      "id": "boater",
+      "kind": "persona",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Boater",
+        "kind": "external",
+        "who": "Visiting and seasonal boaters",
+        "blurb": "Books a berth, pays for it and gets reminders before arriving.",
+        "uses": [
+          {
+            "to": "web",
+            "label": "Books"
+          }
+        ],
+        "jobs": [
+          {
+            "job": "Book a berth",
+            "t": {
+              "booking": "w",
+              "berth": "r"
+            }
+          },
+          {
+            "job": "Pay an invoice",
+            "t": {
+              "invoice": "w"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "harbourmaster",
+      "kind": "persona",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Harbourmaster",
+        "kind": "staff",
+        "who": "Dock staff",
+        "blurb": "Assigns berths and checks boats in.",
+        "uses": [
+          {
+            "to": "web",
+            "label": "Runs the dock"
+          }
+        ],
+        "jobs": [
+          {
+            "job": "Assign a berth",
+            "t": {
+              "booking": "w"
+            }
+          },
+          {
+            "job": "Check a boat in"
+          }
+        ]
+      }
+    },
+    {
+      "id": "finance",
+      "kind": "persona",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Finance clerk",
+        "kind": "staff",
+        "who": "Back office",
+        "blurb": "Chases unpaid invoices and reconciles payments.",
+        "uses": [
+          {
+            "to": "web",
+            "label": "Billing screens"
+          }
+        ],
+        "jobs": [
+          {
+            "job": "Chase an unpaid invoice",
+            "t": {
+              "invoice": "w"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

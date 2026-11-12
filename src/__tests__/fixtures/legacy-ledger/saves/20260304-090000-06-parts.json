@@ -1,0 +1,207 @@
+{
+  "at": "2026-03-04T09:00:00Z",
+  "author": "fixture",
+  "summary": "Services open into their parts",
+  "ops": [
+    {
+      "id": "api_endpoints",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "api",
+        "type": "group",
+        "name": "Endpoints",
+        "order": 1
+      }
+    },
+    {
+      "id": "ep_health",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "api_endpoints",
+        "type": "endpoint",
+        "name": "GET /api/v1/health",
+        "status": "live",
+        "purpose": "Says the API is up.",
+        "docs": [
+          {
+            "label": "routes/health.ts",
+            "url": "https://github.com/example/harbor-slips/blob/main/apps/api/src/routes/health.ts"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_bookings",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "api_endpoints",
+        "type": "module",
+        "name": "Bookings",
+        "status": "planned",
+        "purpose": "Hold, confirm and cancel berths."
+      }
+    },
+    {
+      "id": "mod_billing",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "api_endpoints",
+        "type": "module",
+        "name": "Billing",
+        "status": "in build",
+        "purpose": "Invoices and payments."
+      }
+    },
+    {
+      "id": "api_libs",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "api",
+        "type": "group",
+        "name": "Libraries",
+        "order": 2
+      }
+    },
+    {
+      "id": "apilib_express",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "api_libs",
+        "type": "library",
+        "name": "Express 5",
+        "status": "live",
+        "purpose": "HTTP server and routing."
+      }
+    },
+    {
+      "id": "apilib_zod",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "api_libs",
+        "type": "library",
+        "name": "Zod",
+        "status": "live",
+        "purpose": "Request validation."
+      }
+    },
+    {
+      "id": "web_tools",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "frontend",
+        "parent": "web",
+        "type": "group",
+        "name": "Tools",
+        "order": 1
+      }
+    },
+    {
+      "id": "webtool_vitest",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "frontend",
+        "parent": "web_tools",
+        "type": "tool",
+        "name": "Vitest",
+        "status": "live",
+        "tech": "dev dependency",
+        "purpose": "Unit and component tests."
+      }
+    },
+    {
+      "id": "weblib_router",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "frontend",
+        "parent": "web",
+        "type": "library",
+        "name": "TanStack Router",
+        "status": "live",
+        "purpose": "Routing."
+      }
+    },
+    {
+      "id": "job_reminders",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "jobs",
+        "type": "job",
+        "name": "Arrival reminders",
+        "status": "planned",
+        "tech": "daily at 08:00",
+        "purpose": "Texts boaters the day before they arrive."
+      }
+    },
+    {
+      "id": "job_invoices",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "jobs",
+        "type": "job",
+        "name": "Invoice run",
+        "status": "planned",
+        "schedule": "1st of the month",
+        "purpose": "Raises monthly invoices for long stays."
+      }
+    },
+    {
+      "id": "job_cleanup",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "backend",
+        "parent": "jobs",
+        "type": "job",
+        "name": "Hold cleanup",
+        "status": "planned"
+      }
+    },
+    {
+      "id": "mon_alerts",
+      "kind": "service",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "lane": "platform",
+        "parent": "monitor",
+        "type": "module",
+        "name": "Alert rules",
+        "purpose": "Pages on-call when the API is down."
+      }
+    }
+  ]
+}

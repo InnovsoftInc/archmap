@@ -1,0 +1,50 @@
+{
+  "at": "2026-03-05T10:00:00Z",
+  "author": "fixture",
+  "summary": "Corrections",
+  "ops": [
+    {
+      "id": "harbourmaster",
+      "kind": "persona",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "jobs": [
+          {
+            "job": "Assign a berth",
+            "t": {
+              "booking": "w"
+            }
+          },
+          {
+            "job": "Check a boat in",
+            "t": {
+              "booking_event": "w"
+            }
+          },
+          {
+            "job": "Close a berth for repairs",
+            "t": {
+              "berth": "w"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "web->old_ledger_db",
+      "kind": "connection",
+      "op": "remove",
+      "reason": "The web app never reads the old database."
+    },
+    {
+      "id": "api",
+      "kind": "service",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "status": "live"
+      }
+    }
+  ]
+}

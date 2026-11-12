@@ -17,7 +17,7 @@ import type { Doc, Folder } from "../map/types.ts";
 import { migrate } from "../migrate.ts";
 import { loadProject } from "../project.ts";
 
-const BCACS = join(import.meta.dirname, "fixtures", "bcacs-saves");
+const LEDGER = join(import.meta.dirname, "fixtures", "legacy-ledger");
 
 let root: string;
 let dir: string;
@@ -191,6 +191,20 @@ const OPS: Op[] = [
     name: "Email outbox sender",
     type: "job",
     parent: "jobs",
+    schedule: "every 5 minutes",
+    purpose: "Sends queued emails.",
+  }),
+  add("service", "job_purge", {
+    name: "Purge drafts",
+    type: "job",
+    parent: "jobs",
+    tech: "0 2 * * *",
+    purpose: "Deletes old drafts.",
+  }),
+  add("service", "job_quiet", {
+    name: "Quiet job",
+    type: "job",
+    parent: "jobs",
   }),
   // Connections.
   add("connection", "web->api", {
@@ -359,8 +373,22 @@ describe("migrate", () => {
       { name: "Vitest", why: "Tests" },
     ]);
     expect(find("services", "jobs").data.jobs).toEqual([
-      { name: "Email outbox sender" },
+      { name: "Email outbox sender", schedule: "every 5 minutes" },
+      { name: "Purge drafts", schedule: "0 2 * * *" },
+      { name: "Quiet job" },
     ]);
+  });
+
+  it("keeps job and endpoint purposes as How it works bullets", () => {
+    writeLedger();
+    migrate(root, dir);
+    const jobs = find("services", "jobs").body.split("## How it works")[1];
+    expect(jobs).toContain("- **Email outbox sender**: Sends queued emails.");
+    expect(jobs).toContain("- **Purge drafts**: Deletes old drafts.");
+    expect(jobs).not.toContain("Quiet job");
+    const api = find("services", "api").body.split("## How it works")[1];
+    expect(api).toContain("- **GET /api/v1/healthcheck**: Health.");
+    expect(api).toContain("- **List users (GET /list-users)**: Lists users.");
   });
 
   it("writes the body from purpose, notes, facts and modules", () => {
@@ -473,6 +501,31 @@ describe("migrate", () => {
     expect(r.lines.at(-1)).toBe("Next: run brief --task review");
   });
 
+  it("refuses a config that isn't valid JSON before writing anything", () => {
+    writeLedger();
+    writeFileSync(join(dir, "archmap.config.json"), "{ not json");
+    const r = migrate(root, dir);
+    expect(r.ok).toBe(false);
+    expect(r.lines[0]).toBe("Nothing was written.");
+    expect(r.lines[1]).toMatch(/^archmap\.config\.json: /);
+    expect(existsSync(join(dir, "services"))).toBe(false);
+    expect(existsSync(join(dir, "README.md"))).toBe(false);
+  });
+
+  it("refuses a config without a name before writing anything", () => {
+    writeLedger();
+    writeFileSync(join(dir, "archmap.config.json"), '{"product":"Map"}');
+    const r = migrate(root, dir);
+    expect(r).toEqual({
+      ok: false,
+      lines: [
+        "Nothing was written.",
+        'archmap.config.json: "name" is required',
+      ],
+    });
+    expect(existsSync(join(dir, "services"))).toBe(false);
+  });
+
   it("keeps an existing README", () => {
     writeLedger();
     writeFileSync(join(dir, "README.md"), "mine");
@@ -558,8 +611,8 @@ describe("migrate", () => {
     ]);
   });
 
-  it("migrates a copy of bcacs's saves into docs that pass schema checks except evidence presence", () => {
-    cpSync(BCACS, dir, { recursive: true });
+  it("migrates a full legacy ledger into docs that pass schema checks except evidence presence", () => {
+    cpSync(LEDGER, dir, { recursive: true });
     expect(migrate(root, dir).ok).toBe(true);
     const problems = schemaProblems(loadMap(dir).docs).filter(
       (p) => !p.message.includes("evidence"),
@@ -568,7 +621,7 @@ describe("migrate", () => {
   });
 
   it("keeps every old table, enum, persona and flow", () => {
-    cpSync(BCACS, dir, { recursive: true });
+    cpSync(LEDGER, dir, { recursive: true });
     const m = replay(loadProject(dir).saves);
     migrate(root, dir);
     const all = docs();

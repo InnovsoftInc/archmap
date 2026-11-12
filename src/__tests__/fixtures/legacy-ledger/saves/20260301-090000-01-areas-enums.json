@@ -1,0 +1,114 @@
+{
+  "at": "2026-03-01T09:00:00Z",
+  "author": "fixture",
+  "summary": "Baseline areas and code lists",
+  "ops": [
+    {
+      "id": "people",
+      "kind": "area",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "People and accounts",
+        "order": 1,
+        "row": 0,
+        "cols": 2
+      }
+    },
+    {
+      "id": "berths",
+      "kind": "area",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Berths and bookings",
+        "order": 2,
+        "row": 0,
+        "cols": 3
+      }
+    },
+    {
+      "id": "billing",
+      "kind": "area",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Billing",
+        "order": 3,
+        "row": 1,
+        "cols": 2
+      }
+    },
+    {
+      "id": "member_role",
+      "kind": "enum",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "style": "check",
+        "values": [
+          "boater",
+          "harbourmaster",
+          "admin"
+        ]
+      }
+    },
+    {
+      "id": "booking_status",
+      "kind": "enum",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "style": "check",
+        "values": [
+          "held",
+          "confirmed",
+          "cancelled",
+          "completed"
+        ]
+      }
+    },
+    {
+      "id": "berth_size",
+      "kind": "enum",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "style": "check",
+        "values": [
+          "small",
+          "medium",
+          "large"
+        ]
+      }
+    },
+    {
+      "id": "invoice_status",
+      "kind": "enum",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "style": "check",
+        "values": [
+          "draft",
+          "sent",
+          "paid",
+          "void"
+        ]
+      }
+    },
+    {
+      "id": "old_contact_type",
+      "kind": "enum",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "style": "check",
+        "values": [
+          "phone",
+          "fax"
+        ]
+      }
+    }
+  ]
+}

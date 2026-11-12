@@ -1,0 +1,212 @@
+{
+  "at": "2026-03-04T10:00:00Z",
+  "author": "fixture",
+  "summary": "Connections",
+  "ops": [
+    {
+      "id": "web->api",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "web",
+        "to": "api",
+        "label": "All app data",
+        "protocol": "HTTPS \u00b7 JSON",
+        "status": "in build"
+      }
+    },
+    {
+      "id": "api->postgres",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "api",
+        "to": "postgres",
+        "label": "Bookings data",
+        "protocol": "SQL over TLS",
+        "status": "in build"
+      }
+    },
+    {
+      "id": "bookings->postgres",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "mod_bookings",
+        "to": "postgres",
+        "label": "Bookings data",
+        "protocol": "SQL over TLS",
+        "status": "planned"
+      }
+    },
+    {
+      "id": "api->blob",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "api",
+        "to": "blob_docs",
+        "label": "Uploads",
+        "protocol": "HTTPS"
+      }
+    },
+    {
+      "id": "api->keyvault",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "api",
+        "to": "keyvault",
+        "label": "Reads secrets",
+        "status": "live"
+      }
+    },
+    {
+      "id": "api->mailer",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "api",
+        "to": "mailer",
+        "label": "Booking emails",
+        "protocol": "HTTPS API"
+      }
+    },
+    {
+      "id": "billing->payments",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "mod_billing",
+        "to": "payments",
+        "label": "Card payments",
+        "status": "planned"
+      }
+    },
+    {
+      "id": "payments->api",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "payments",
+        "to": "api",
+        "label": "Payment webhooks",
+        "protocol": "Webhook",
+        "status": "planned"
+      }
+    },
+    {
+      "id": "mailer->sms",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "mailer",
+        "to": "sms",
+        "label": "Falls back to text",
+        "protocol": "Provider bridge"
+      }
+    },
+    {
+      "id": "jobs->sms",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "job_reminders",
+        "to": "sms",
+        "label": "Arrival texts",
+        "status": "planned"
+      }
+    },
+    {
+      "id": "jobs->postgres",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "jobs",
+        "to": "postgres",
+        "label": "Reads bookings",
+        "status": "planned"
+      }
+    },
+    {
+      "id": "old_site->old_ledger_db",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "old_site",
+        "to": "old_ledger_db",
+        "label": "Reads and writes",
+        "protocol": "SQL"
+      }
+    },
+    {
+      "id": "api->old_site",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "api",
+        "to": "old_site",
+        "label": "Imports members",
+        "status": "retiring soon"
+      }
+    },
+    {
+      "id": "edge->web",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "edge",
+        "to": "web",
+        "label": "Routes traffic",
+        "status": "planned"
+      }
+    },
+    {
+      "id": "api->monitor",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "api",
+        "to": "monitor",
+        "label": "Logs and metrics"
+      }
+    },
+    {
+      "id": "web->web",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "weblib_router",
+        "to": "web",
+        "label": "self"
+      }
+    },
+    {
+      "id": "web->old_ledger_db",
+      "kind": "connection",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "from": "web",
+        "to": "old_ledger_db",
+        "label": "Direct reads"
+      }
+    }
+  ]
+}

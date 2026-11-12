@@ -1,0 +1,91 @@
+{
+  "at": "2026-03-02T10:00:00Z",
+  "author": "fixture",
+  "summary": "Native enums and cleanup",
+  "ops": [
+    {
+      "id": "booking_status",
+      "kind": "enum",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "style": "native"
+      }
+    },
+    {
+      "id": "member_role",
+      "kind": "enum",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "style": "native"
+      }
+    },
+    {
+      "id": "booking_status",
+      "kind": "enum",
+      "op": "update",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "values": [
+          "held",
+          "confirmed",
+          "cancelled",
+          "completed",
+          "no_show"
+        ]
+      }
+    },
+    {
+      "id": "contact_log",
+      "kind": "table",
+      "op": "remove",
+      "reason": "Contact history moves to the CRM."
+    },
+    {
+      "id": "old_contact_type",
+      "kind": "enum",
+      "op": "remove",
+      "reason": "Only contact_log used it."
+    },
+    {
+      "id": "member.fax",
+      "kind": "column",
+      "op": "remove",
+      "reason": "Nobody sends faxes."
+    },
+    {
+      "id": "member.phone",
+      "kind": "column",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "after": "email",
+        "type": "text",
+        "desc": "For day-of-arrival texts."
+      }
+    },
+    {
+      "id": "booking.nights",
+      "kind": "column",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "after": "status",
+        "type": "int",
+        "desc": "How many nights."
+      }
+    },
+    {
+      "id": "vessel.name",
+      "kind": "column",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "after": "member_id",
+        "type": "text",
+        "unique": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "at": "2026-03-06T09:00:00Z",
+  "author": "fixture",
+  "summary": "Flows",
+  "ops": [
+    {
+      "id": "boater_books",
+      "kind": "flow",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Boater books a berth",
+        "order": 1,
+        "description": "From picking dates to a confirmed booking.",
+        "steps": [
+          {
+            "from": "persona:boater",
+            "to": "web",
+            "label": "Picks dates and a berth"
+          },
+          {
+            "from": "web",
+            "to": "api",
+            "label": "Holds the berth"
+          },
+          {
+            "from": "api",
+            "to": "postgres",
+            "label": "Saves the booking"
+          },
+          {
+            "from": "api",
+            "to": "mailer",
+            "label": "Sends the confirmation",
+            "status": "planned"
+          }
+        ]
+      }
+    },
+    {
+      "id": "staff_reports",
+      "kind": "flow",
+      "op": "add",
+      "reason": "Synthetic fixture.",
+      "value": {
+        "name": "Staff run a report",
+        "order": 2,
+        "description": "Staff report from the old database.",
+        "steps": [
+          {
+            "from": "persona:finance",
+            "to": "old_site",
+            "label": "Opens the report"
+          },
+          {
+            "from": "old_site",
+            "to": "old_ledger_db",
+            "label": "Queries"
+          }
+        ]
+      }
+    }
+  ]
+}
