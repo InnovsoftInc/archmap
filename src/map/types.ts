@@ -27,6 +27,8 @@ export type MapConfig = {
   archmap?: string;
   name: string;
   cli?: string;
+  /** The branch pull requests target. */
+  base?: string;
   agent?: { command?: string; skip?: string[] };
   ignore?: string[];
   watch?: string[];

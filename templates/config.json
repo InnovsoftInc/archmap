@@ -1,8 +1,9 @@
 {
   "archmap": "__VERSION__",
   "name": "__NAME__",
+  "base": "__BASE__",
   "agent": {
-    "command": "__AGENT_COMMAND__",
+    "command": "claude -p --permission-mode acceptEdits --allowedTools \"Bash({cli} check:*)\" \"Bash({cli} brief:*)\"",
     "skip": [
       "**/*.test.*",
       "**/__tests__/**",

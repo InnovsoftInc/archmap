@@ -96,12 +96,15 @@ describe("map gate", () => {
   });
 
   it("counts a lead that moved to another changed file as new", () => {
-    const route = 'import express from "express";\nconst app = express();\napp.post("/orders", h);\n';
+    const route =
+      'import express from "express";\nconst app = express();\napp.post("/orders", h);\n';
     write("apps/api/src/a.ts", route);
     commit("orders");
     write("apps/api/src/a.ts", "export {};\n");
     write("apps/api/src/b.ts", route);
-    expect(problem()).toContain("apps/api/src/b.ts: new lead: route POST /orders");
+    expect(problem()).toContain(
+      "apps/api/src/b.ts: new lead: route POST /orders",
+    );
   });
 
   it.each([

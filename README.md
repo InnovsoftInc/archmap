@@ -49,7 +49,7 @@ Run them as `npx -y github:InnovsoftInc/archmap#v0.4.0 <command>`, written `arch
 
 | Command                                                                | What it does                                                                    |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `archmap init [--name] [--ci github\|azure]`                           | Creates `architecture/`, the `AGENTS.md` section and, with `--ci`, the workflow |
+| `archmap init [--name] [--ci github\|azure] [--base <branch>]`         | Creates `architecture/`, the `AGENTS.md` section and, with `--ci`, the workflow |
 | `archmap scan [--json]`                                                | Lists leads from the code: one key per line, or JSON                            |
 | `archmap check [--json] [--strict] [--base <ref>]`                     | Validates the map and its evidence; with `--base`, the map gate (run it in CI)  |
 | `archmap brief [--task setup\|update\|review\|hosting] [--base <ref>]` | Prints the task for an agent to follow                                          |
@@ -62,7 +62,7 @@ All of them take `--dir <folder>` (default `architecture`). Every command except
 
 ## CI
 
-`init --ci github` (or `azure`) writes two jobs for pull requests:
+`init` records the branch pull requests target as `base` in the config (`--base <branch>`, else the branch `origin/HEAD` names, else `main`); the `AGENTS.md` section and the update brief use it. `init --ci github` (or `azure`) writes two jobs for pull requests:
 
 1. `check` (required, no AI) runs `archmap check --base origin/<base branch>`. It fails when the PR changes the architecture but neither the map nor an `Archmap: none - <reason>` commit trailer records it.
 2. `map` (not required) runs `archmap agent --base origin/<base branch>` with the AI key from a CI secret and pushes the map edit to the PR branch, so reviewers see it next to the code. It never blocks a merge.
@@ -85,10 +85,10 @@ Other CI systems run the same two commands.
 `init` sets `agent.command` to Claude Code, allowed to edit files and to run `archmap check` and `archmap brief` without asking, since nobody is there to approve a command in CI:
 
 ```
-claude -p --permission-mode acceptEdits --allowedTools "Bash(<cli> check:*)" "Bash(<cli> brief:*)"
+claude -p --permission-mode acceptEdits --allowedTools "Bash({cli} check:*)" "Bash({cli} brief:*)"
 ```
 
-`<cli>` is the command that runs archmap for this map. Another agent needs the same: permission to edit files in the map folder and to run `check` without a prompt. The command gets the brief on stdin, or in place of `{brief}` when the command contains it. If the agent decides the map needs no change, it writes the reason to `<map folder>/.no-change` (which `init` adds to the map folder's `.gitignore`); `archmap agent` reads and deletes it, and the `map` job commits the reason as an `Archmap: none` trailer. When you run `brief` yourself instead, add `Archmap: none - <reason>` to your commit message.
+`archmap agent` replaces `{cli}` with the command that runs archmap for this map when it runs: `cli` from the config, else `npx` at the pinned version, so setting `cli` later takes effect. Another agent needs the same: permission to edit files in the map folder and to run `check` without a prompt. The command gets the brief on stdin, or in place of `{brief}` when the command contains it. If the agent decides the map needs no change, it writes the reason to `<map folder>/.no-change` (which `init` adds to the map folder's `.gitignore`); `archmap agent` reads and deletes it, and the `map` job commits the reason as an `Archmap: none` trailer. When you run `brief` yourself instead, add `Archmap: none - <reason>` to your commit message.
 
 The `check` job counts a `package.json` only when the packages it depends on, or its workspaces, change; a version bump alone is not architectural. A map change or `Archmap: none` trailer covers only the architectural changes made before it: a later commit that changes the architecture needs its own.
 

@@ -6,6 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HOME_REPO, VERSION } from "../home.ts";
@@ -29,8 +30,9 @@ describe("init", () => {
     expect(config.archmap).toBe(VERSION);
     expect(config.name).toBe("shop");
     expect(config.agent.command).toBe(
-      `claude -p --permission-mode acceptEdits --allowedTools "Bash(${CLI} check:*)" "Bash(${CLI} brief:*)"`,
+      'claude -p --permission-mode acceptEdits --allowedTools "Bash({cli} check:*)" "Bash({cli} brief:*)"',
     );
+    expect(config.base).toBe("main");
     expect(read("architecture", ".gitignore")).toBe(".no-change\n");
     expect(existsSync(join(root, "architecture", "README.md"))).toBe(true);
     const agents = read("AGENTS.md");
@@ -96,12 +98,8 @@ describe("init", () => {
     expect(r.lines.at(-1)).toContain(`${CLI} --dir docs/map brief`);
   });
 
-  it("lets the default agent run check and brief for a non-default folder", () => {
+  it("writes .no-change to the .gitignore of a non-default folder", () => {
     init(root, { dir: "docs/map" });
-    const config = JSON.parse(read("docs", "map", "archmap.config.json"));
-    expect(config.agent.command).toContain(
-      `"Bash(${CLI} --dir docs/map check:*)"`,
-    );
     expect(read("docs", "map", ".gitignore")).toBe(".no-change\n");
   });
 
@@ -121,5 +119,66 @@ describe("init", () => {
     );
     init(root, {});
     expect(read("AGENTS.md")).toContain("node tools/archmap.mjs brief");
+  });
+
+  it("sets base from --base, else origin/HEAD, else main, and uses it in AGENTS.md", () => {
+    init(root, { base: "dev" });
+    const cfg = () => JSON.parse(read("architecture", "archmap.config.json"));
+    expect(cfg().base).toBe("dev");
+    expect(read("AGENTS.md")).toContain(`${CLI} brief --base dev`);
+    expect(read("AGENTS.md")).not.toContain("--base main");
+    // An existing config keeps its base; --base changes it.
+    init(root, {});
+    expect(cfg().base).toBe("dev");
+    init(root, { base: "staging" });
+    expect(cfg().base).toBe("staging");
+    expect(read("AGENTS.md")).toContain(`${CLI} brief --base staging`);
+  });
+
+  it("defaults base to the origin/HEAD branch", () => {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: root, stdio: "ignore" });
+    git("init", "-q", "-b", "trunk");
+    writeFileSync(join(root, "a.txt"), "a\n");
+    git("add", "a.txt");
+    git(
+      ...["-c", "user.name=T", "-c", "user.email=t@e"],
+      ...["-c", "commit.gpgsign=false", "commit", "-qm", "x"],
+    );
+    git("update-ref", "refs/remotes/origin/dev", "HEAD");
+    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/dev");
+    init(root, {});
+    expect(JSON.parse(read("architecture", "archmap.config.json")).base).toBe(
+      "dev",
+    );
+  });
+
+  it("stays idempotent after Prettier formats AGENTS.md and CLAUDE.md", () => {
+    writeFileSync(join(root, "CLAUDE.md"), "# Notes\n\n- one\n- two\n");
+    init(root, {});
+    // What Prettier does: a blank line after the start marker, and a line
+    // straight after a list item indented into it.
+    const agents = read("AGENTS.md").replace(
+      "<!-- archmap:start -->\n",
+      "<!-- archmap:start -->\n\n",
+    );
+    writeFileSync(join(root, "AGENTS.md"), agents);
+    const claude = read("CLAUDE.md").replace(
+      /^@AGENTS\.md$/m,
+      "  @AGENTS.md",
+    );
+    writeFileSync(join(root, "CLAUDE.md"), claude);
+    init(root, {});
+    expect(read("AGENTS.md")).toBe(agents);
+    expect(read("CLAUDE.md")).toBe(claude);
+    writeFileSync(join(root, "CLAUDE.md"), "# Notes\n\n@./AGENTS.md\n");
+    init(root, {});
+    expect(read("CLAUDE.md")).toBe("# Notes\n\n@./AGENTS.md\n");
+  });
+
+  it("puts @AGENTS.md after a blank line so a list doesn't swallow it", () => {
+    writeFileSync(join(root, "CLAUDE.md"), "# Notes\n\n- one\n");
+    init(root, {});
+    expect(read("CLAUDE.md")).toBe("# Notes\n\n- one\n\n@AGENTS.md\n");
   });
 });

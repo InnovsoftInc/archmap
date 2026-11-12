@@ -180,7 +180,9 @@ describe("runCheck", () => {
     ]);
     // An entry without "@<file>" matches the lead in every file.
     config({ ignore: ["scan:infra:azurerm_key_vault:*"] });
-    expect(infra()).toEqual(["scan:infra:azurerm_postgresql:db@infra/db/pg.tf"]);
+    expect(infra()).toEqual([
+      "scan:infra:azurerm_postgresql:db@infra/db/pg.tf",
+    ]);
   });
 
   it("confirms infra, Docker and CI leads by a code entry of the file or a folder above it", () => {
@@ -201,9 +203,7 @@ describe("runCheck", () => {
       "infra/pg.tf: terraform azurerm_postgresql db",
       ".github/workflows/deploy.yml: CI workflow deploy.yml",
     ]);
-    api(
-      "code:\n  - apps/api\n  - infra/pg.tf\n  - .github/workflows/\n",
-    );
+    api("code:\n  - apps/api\n  - infra/pg.tf\n  - .github/workflows/\n");
     // Routes keep their own rule: a code entry doesn't confirm them.
     expect(leads()).toEqual(["apps/api/src/server.ts: route GET /health"]);
     // A sibling path with the same prefix is not a parent folder.
@@ -264,7 +264,9 @@ describe("unconfirmedLeads", () => {
         s,
         [doc("services", "api", { endpoints: [{ route }] })],
         [],
-      ).some((l) => l.key === "scan:route:GET /health@apps/api/src/routes.ts");
+      ).some(
+        (l) => l.key === "scan:route:GET /health@apps/api/src/routes.ts",
+      );
     expect(has("GET /health")).toBe(false);
     expect(has("GET /health/")).toBe(false);
     expect(has("GET /other")).toBe(true);

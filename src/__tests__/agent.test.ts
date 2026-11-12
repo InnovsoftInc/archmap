@@ -87,6 +87,38 @@ describe("archmap agent", () => {
     expect(exists("architecture/services/x.md")).toBe(false);
   });
 
+  it("says nothing changed, rather than only skipped files, on a clean tree", () => {
+    expect(runAgent(root, dir(), { base: "HEAD" })).toEqual({
+      ok: true,
+      lines: ["No files changed since HEAD; nothing to map."],
+    });
+    expect(exists("architecture/services/x.md")).toBe(false);
+  });
+
+  it("fills {cli} in with the map's cli command when it runs", () => {
+    const seen = node(
+      `require("node:fs").writeFileSync("architecture/cli-seen.txt", process.argv[1])`,
+    );
+    config({ command: `${seen} "{cli} check"` });
+    runAgent(root, dir(), {});
+    expect(read("architecture/cli-seen.txt")).toMatch(
+      /^npx -y github:\S+#v\S+ check$/,
+    );
+    // Setting cli later takes effect without rewriting the command.
+    write(
+      "architecture/archmap.config.json",
+      JSON.stringify({
+        name: "Test",
+        cli: "node tools/archmap.mjs",
+        agent: { command: `${seen} "{cli} check"` },
+      }),
+    );
+    runAgent(root, dir(), {});
+    expect(read("architecture/cli-seen.txt")).toBe(
+      "node tools/archmap.mjs check",
+    );
+  });
+
   it("passes the brief on stdin", () => {
     config({
       command: node(

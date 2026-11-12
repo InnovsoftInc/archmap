@@ -117,6 +117,34 @@ describe("brief", () => {
     expect(out.match(/- services\/api\.md/g)).toHaveLength(1);
   });
 
+  it("compares an update with the config's base when --base isn't given", () => {
+    config({ base: "dev" });
+    api();
+    initRepo();
+    git("branch", "dev");
+    write("apps/a.ts", "a\n");
+    const out = brief(root, dir(), { task: "update" });
+    expect(out).toContain("## What changed since dev");
+    expect(out).toContain("- apps/a.ts");
+  });
+
+  it("includes the gate's finding in the check results with --base", () => {
+    write("apps/api/src/a.ts", "a\n");
+    api("endpoints:\n  - route: GET /a\n    evidence: apps/api/src/a.ts\n");
+    initRepo();
+    write("apps/api/src/a.ts", "a2\n");
+    const results = (base?: string) =>
+      brief(root, dir(), { task: "update", base })
+        .split("## Current check results")[1]
+        ?.split("## Leads")[0];
+    expect(results("HEAD")).toContain(
+      "This branch changes the architecture but not the map",
+    );
+    expect(results("HEAD")).toContain(
+      "apps/api/src/a.ts: evidence of services/api.md",
+    );
+  });
+
   it("tells a person to add the trailer, and only the agent run to write .no-change", () => {
     api();
     initRepo();

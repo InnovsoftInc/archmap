@@ -10,6 +10,7 @@ import { changedFiles, dirtyState } from "./git.ts";
 import type { DirtyState } from "./git.ts";
 import { loadMap } from "./map/load.ts";
 import type { Result } from "./map/types.ts";
+import { cliCommand } from "./version.ts";
 
 const git = (root: string, args: string[]): void => {
   execFileSync("git", args, { cwd: root, stdio: "ignore" });
@@ -93,8 +94,12 @@ export const runAgent = (
   dir: string,
   opts: { task?: Task; base?: string },
 ): Result => {
-  const agent = loadMap(dir).config.agent;
-  const command = agent?.command?.trim();
+  const config = loadMap(dir).config;
+  const agent = config.agent;
+  // `{cli}` is filled in now, so a `cli` set after init takes effect.
+  const command = agent?.command
+    ?.trim()
+    .replaceAll("{cli}", () => cliCommand(config, dir, root));
   if (!command)
     return {
       ok: false,
@@ -106,6 +111,11 @@ export const runAgent = (
   if (opts.base) {
     const skip = agent?.skip ?? [];
     const changed = changedFiles(root, opts.base);
+    if (!changed.length)
+      return {
+        ok: true,
+        lines: [`No files changed since ${opts.base}; nothing to map.`],
+      };
     if (changed.every((f) => skip.some((g) => matchesGlob(f, g))))
       return {
         ok: true,

@@ -28,9 +28,10 @@ const HELP = `archmap: an architecture map kept as markdown files in your repo.
 
 Usage: archmap <command> [options]
 
-  init [--name "Project"] [--ci github|azure]
+  init [--name "Project"] [--ci github|azure] [--base <branch>]
                                  Create architecture/, the AGENTS.md section and,
-                                 with --ci, the PR workflow
+                                 with --ci, the PR workflow; --base is the branch
+                                 PRs target (default: origin/HEAD, else main)
   scan [--json]                  List what the repo contains (leads for the map)
   check [--json] [--strict] [--base <ref>]
                                  Validate the map; with --base, run the map gate
@@ -102,7 +103,14 @@ const main = async (argv: string[]): Promise<void> => {
       const ci = values.ci;
       if (ci !== undefined && ci !== "github" && ci !== "azure")
         throw new Error(`--ci must be github or azure, not "${ci}"`);
-      return print(init(real(cwd), { dir: dirArg, name: values.name, ci }));
+      return print(
+        init(real(cwd), {
+          dir: dirArg,
+          name: values.name,
+          ci,
+          base: values.base,
+        }),
+      );
     }
     case "scan": {
       const leads = leadsOf(scan(projectRoot()));

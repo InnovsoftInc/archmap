@@ -59,7 +59,8 @@ export const brief = (
   dir: string,
   opts: { task?: Task; base?: string; forAgent?: boolean },
 ): string => {
-  const check = runCheck(root, dir);
+  // With --base the results include the map gate, so the agent sees why CI fails.
+  const check = runCheck(root, dir, { base: opts.base });
   const task = pickTask(check.map.docs, opts);
   const cli = cliCommand(check.map.config, dir, root);
   const folder = dir.startsWith(root)
@@ -75,7 +76,7 @@ export const brief = (
   ];
 
   if (task === "update") {
-    const base = opts.base ?? "main";
+    const base = opts.base ?? check.map.config.base ?? "main";
     const changed = changedFiles(root, base);
     const covering = check.map.docs.filter((d) =>
       changed.some((f) => covers(d, f)),
