@@ -4,6 +4,7 @@
 import { emptyModel } from "./core.ts";
 import type { Column, Model, Table } from "./core.ts";
 import type { Doc, Folder, MapConfig } from "./map/types.ts";
+import type { Freshness } from "./versions.ts";
 
 export type DocView = {
   folder: Folder;
@@ -63,7 +64,18 @@ const column = (c: Obj): Column => ({
   desc: text(c.desc),
 });
 
-export const toViewModel = (docs: Doc[]): Model => {
+/** A library's version, and how far behind the latest release it is. */
+export type LibInfo = {
+  package: string;
+  declared: string;
+  latest?: string;
+  fresh?: Freshness;
+};
+
+export const toViewModel = (
+  docs: Doc[],
+  libs: Record<string, LibInfo> = {},
+): Model => {
   const m = emptyModel();
   m.categories.apps = { name: "Apps", order: 1 };
   m.categories.services = { name: "Services", order: 2 };
@@ -100,10 +112,16 @@ export const toViewModel = (docs: Doc[]): Model => {
         };
       });
       list(d.data.libraries).forEach((l, i) => {
+        const v = Reflect.get(libs, `${d.id}.lib-${i}`) as LibInfo | undefined;
         m.services[`${d.id}.lib-${i}`] = {
           parent: d.id,
           type: "library",
           name: text(l.name),
+          purpose: text(l.why),
+          package: v?.package,
+          version: v?.declared,
+          latest: v?.latest,
+          fresh: v?.fresh,
         };
       });
     } else if (d.folder === "stores") {

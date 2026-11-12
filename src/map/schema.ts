@@ -47,7 +47,10 @@ const SHAPES: Record<Folder, Shape> = {
     connects,
     endpoints: { t: "list", item: { route: { t: "route" }, evidence: opt } },
     jobs: { t: "list", item: { name: req, schedule: opt, evidence: opt } },
-    libraries: { t: "list", item: { name: req, why: opt, evidence: opt } },
+    libraries: {
+      t: "list",
+      item: { name: req, package: opt, why: opt, evidence: opt },
+    },
   },
   stores: {
     ...COMMON,

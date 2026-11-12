@@ -17,7 +17,9 @@ import {
   stripPublicModel,
   toViewModel,
 } from "./view.ts";
-import type { DocView } from "./view.ts";
+import type { DocView, LibInfo } from "./view.ts";
+import { latestVersions } from "./registry.ts";
+import { freshness, libraryVersions } from "./versions.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIEWER = join(HERE, "..", "viewer");
@@ -82,9 +84,27 @@ const html = (md: string | undefined): string | undefined =>
 export const siteData = (
   root: string,
   dir: string,
-  opts: { dev?: boolean; public?: boolean } = {},
+  opts: {
+    dev?: boolean;
+    public?: boolean;
+    /** Latest release per package, from latestVersions. */
+    latest?: Record<string, string>;
+  } = {},
 ): string => {
   const { errors, warnings, map } = runCheck(root, dir);
+  const libs: Record<string, LibInfo> = Object.fromEntries(
+    Object.entries(libraryVersions(root, map.docs)).map(([id, v]) => {
+      const latest: unknown = opts.latest
+        ? Reflect.get(opts.latest, v.package)
+        : undefined;
+      return [
+        id,
+        typeof latest === "string"
+          ? { ...v, latest, fresh: freshness(v.declared, latest) }
+          : v,
+      ];
+    }),
+  );
   const docs: Record<string, DocView> = {};
   for (const d of map.docs) {
     const s = docSections(d);
@@ -101,7 +121,7 @@ export const siteData = (
       code,
     };
   }
-  const model = toViewModel(map.docs);
+  const model = toViewModel(map.docs, libs);
   const body = {
     config: {
       ...(opts.public ? publicConfig(map.config) : map.config),
@@ -121,15 +141,25 @@ export const siteData = (
   });
 };
 
-export const build = (
+/** The packages the map's libraries use, for a latest-version lookup. */
+const libraryPackages = (root: string, dir: string): string[] =>
+  Object.values(libraryVersions(root, loadMap(dir).docs)).map(
+    (v) => v.package,
+  );
+
+export const build = async (
   root: string,
   dir: string,
   out: string,
-  opts: { public?: boolean } = {},
-): string[] => {
+  opts: { public?: boolean; offline?: boolean; fetch?: typeof fetch } = {},
+): Promise<string[]> => {
+  const latest = await latestVersions(libraryPackages(root, dir), opts);
   ensureDir(out);
   STATIC.forEach((f) => copyFileSync(join(VIEWER, f), join(out, f)));
-  writeFileSync(join(out, "data.json"), siteData(root, dir, opts));
+  writeFileSync(
+    join(out, "data.json"),
+    siteData(root, dir, { public: opts.public, latest }),
+  );
   const logo = loadMap(dir).config.logo;
   if (logo) {
     const src = join(dir, logo);
@@ -154,12 +184,16 @@ export const serve = (
   root: string,
   dir: string,
   port: number,
+  opts: { offline?: boolean; fetch?: typeof fetch } = {},
 ): Promise<Server> => {
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     const name = basename((req.url || "/").split("?")[0]) || "index.html";
     try {
       let body: string | Buffer;
-      if (name === "data.json") body = siteData(root, dir, { dev: true });
+      if (name === "data.json") {
+        const latest = await latestVersions(libraryPackages(root, dir), opts);
+        body = siteData(root, dir, { dev: true, latest });
+      }
       else if (STATIC.includes(name)) body = readFileSync(join(VIEWER, name));
       else if (name.startsWith("logo.")) {
         const logo = loadMap(dir).config.logo;

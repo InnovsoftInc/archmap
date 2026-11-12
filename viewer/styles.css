@@ -1626,3 +1626,26 @@ ul.code code {
     padding: 20px 16px;
   }
 }
+
+/* Library versions: how far the declared version is behind the latest release. */
+.fresh {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.fresh.f-ok {
+  background: var(--add-bg);
+  color: var(--add-fg);
+}
+.fresh.f-patch,
+.fresh.f-minor {
+  background: var(--chg-bg);
+  color: var(--chg-fg);
+}
+.fresh.f-major {
+  background: var(--del-bg);
+  color: var(--del-fg);
+}

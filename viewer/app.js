@@ -328,6 +328,48 @@ function catName(id) {
     })[0] || { c: { name: id || "" } }
   ).c.name;
 }
+// A library's declared version from its manifest, and how far it is behind the
+// latest release when dev or build could look that up.
+var FRESH = {
+  ok: "up to date",
+  patch: "patch behind",
+  minor: "minor behind",
+  major: "major behind",
+};
+function versionBadge(s) {
+  if (!s.version) return "";
+  var tip = s.latest ? ' title="Latest: ' + esc(s.latest) + '"' : "";
+  return (
+    '<span class="mt ver">· ' +
+    esc(s.version) +
+    "</span>" +
+    (s.fresh && FRESH[s.fresh]
+      ? '<span class="fresh f-' + s.fresh + '"' + tip + ">" + FRESH[s.fresh] + "</span>"
+      : "")
+  );
+}
+// Inside a service its parts are drawn in labelled groups.
+var PART_GROUPS = [
+  { type: "endpoint", name: "Endpoints" },
+  { type: "job", name: "Jobs" },
+  { type: "library", name: "Libraries" },
+];
+function partGroups(items) {
+  var groups = PART_GROUPS.map(function (g) {
+    return { name: g.name, items: items.filter(function (x) {
+      return stype(x.s) === g.type;
+    }) };
+  });
+  var rest = items.filter(function (x) {
+    return !PART_GROUPS.some(function (g) {
+      return g.type === stype(x.s);
+    });
+  });
+  groups.push({ name: "Other parts", items: rest });
+  return groups.filter(function (g) {
+    return g.items.length;
+  });
+}
 function svcCard(x, opts) {
   var s = x.s,
     k = "svc:" + x.id,
@@ -353,7 +395,8 @@ function svcCard(x, opts) {
         "</span>" +
         (s.status && s.status !== "live"
           ? '<span class="mt">· ' + esc(s.status) + "</span>"
-          : "")) +
+          : "") +
+        versionBadge(s)) +
     keyBadges(x.st) +
     (drillable ? '<span class="drill">Open ›</span>' : "") +
     "</div>";
@@ -575,14 +618,20 @@ function layoutArch(vm) {
   }
   var L = levelSets(),
     cols = Math.min(L.main.length > 9 ? 4 : 3, Math.max(1, L.main.length));
+  var sorted = L.main.slice().sort(function (a, b) {
+    return (a.s.order || 0) - (b.s.order || 0);
+  });
+  // Inside a service each group of parts starts its own block of rows.
+  var blocks = path.length > 1 ? partGroups(sorted) : [{ items: sorted }];
   // Rows are as tall as their tallest card, so wrapped names never overlap.
   var rowY = PAD_T,
     rowH = 0;
-  L.main
-    .sort(function (a, b) {
-      return (a.s.order || 0) - (b.s.order || 0);
-    })
-    .forEach(function (x, i) {
+  blocks.forEach(function (b, bi) {
+    if (bi) {
+      rowY += rowH + ZGAP + PAD_T;
+      rowH = 0;
+    }
+    b.items.forEach(function (x, i) {
       if (i && i % cols === 0) {
         rowY += rowH + 60;
         rowH = 0;
@@ -592,6 +641,7 @@ function layoutArch(vm) {
       pos["svc:" + x.id] = { x: PAD + (i % cols) * (SW + 70), y: rowY };
       SIZE["svc:" + x.id] = { w: SW, h: h };
     });
+  });
   // Things in other categories sit below, compact, four to a row.
   var sy = rowY + rowH + ZGAP + PAD_T,
     SC = 4,
@@ -1018,15 +1068,23 @@ function renderArch() {
     }),
     stubKeys = L.stubs.map(function (x) {
       return "svc:" + x.id;
-    });
-  [
-    [
-      mainKeys,
-      lastName,
-      path.length === 1 ? path[0] : catOf(path[path.length - 1]),
-    ],
-    [stubKeys, "Talks to, in other categories", "records"],
-  ].forEach(function (z) {
+    }),
+    zoneColour = path.length === 1 ? path[0] : catOf(path[path.length - 1]);
+  var mainZones =
+    path.length > 1 && vm.S[path[path.length - 1]]
+      ? partGroups(L.main).map(function (g) {
+          return [
+            g.items.map(function (x) {
+              return "svc:" + x.id;
+            }),
+            vm.S[path[path.length - 1]].s.name + " · " + g.name,
+            zoneColour,
+          ];
+        })
+      : [[mainKeys, lastName, zoneColour]];
+  mainZones
+    .concat([[stubKeys, "Talks to, in other categories", "records"]])
+    .forEach(function (z) {
     if (!z[0].length) return;
     var el = document.createElement("div");
     el.className = "zone";

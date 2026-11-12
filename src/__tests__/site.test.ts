@@ -237,10 +237,10 @@ describe("site data", () => {
     expect(data.check).toBeDefined();
   });
 
-  it("--public build has no For developers text, code or evidence anywhere in data.json", () => {
+  it("--public build has no For developers text, code or evidence anywhere in data.json", async () => {
     seed();
     const out = join(root, "site");
-    build(root, dir, out, { public: true });
+    await build(root, dir, out, { public: true, offline: true });
     expect(readdirSync(out).sort()).toEqual([
       "app.js",
       "data.json",
@@ -397,10 +397,10 @@ Inline <b onmouseover=alert(1)>bold</b>.
     }
   });
 
-  it("a normal build keeps dev text and code", () => {
+  it("a normal build keeps dev text and code", async () => {
     seed();
     const out = join(root, "site");
-    build(root, dir, out, {});
+    await build(root, dir, out, { offline: true });
     const data = JSON.parse(readFileSync(join(out, "data.json"), "utf8")) as {
       docs: Record<string, { code: string[]; dev: string }>;
       config: { name: string };

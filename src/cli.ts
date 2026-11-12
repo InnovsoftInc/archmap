@@ -40,8 +40,8 @@ Usage: archmap <command> [options]
                                  Print the task for an AI agent to follow
   agent [--task ...] [--base <ref>]
                                  Run the configured agent (agent.command) on the brief
-  dev [--port 4321]              View the map locally; reloads on file changes
-  build [--out archmap-site] [--public]
+  dev [--port 4321] [--offline]  View the map locally; reloads on file changes
+  build [--out archmap-site] [--public] [--offline]
                                  Write the map as a static site
   migrate                        Turn an old saves ledger into map files
 
@@ -87,6 +87,7 @@ const main = async (argv: string[]): Promise<void> => {
       json: { type: "boolean" },
       strict: { type: "boolean" },
       public: { type: "boolean" },
+      offline: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -146,13 +147,16 @@ const main = async (argv: string[]): Promise<void> => {
     case "build":
       return print({
         ok: true,
-        lines: build(root, dir, resolve(cwd, values.out || "archmap-site"), {
-          public: values.public,
-        }),
+        lines: await build(
+          root,
+          dir,
+          resolve(cwd, values.out || "archmap-site"),
+          { public: values.public, offline: values.offline },
+        ),
       });
     case "dev": {
       const port = Number(values.port || 4321);
-      await serve(root, dir, port);
+      await serve(root, dir, port, { offline: values.offline });
       console.log(
         `Architecture map at http://127.0.0.1:${port}/ (reloads when files in ${dirArg} change). Ctrl+C to stop.`,
       );
