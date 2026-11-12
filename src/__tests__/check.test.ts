@@ -69,6 +69,29 @@ describe("runCheck", () => {
     ).toHaveLength(1);
   });
 
+  it("reports secrets in archmap.config.json", () => {
+    config({ links: [{ label: "DB", url: "postgres://admin:hunter22@db/x" }] });
+    expect(runCheck(root, dir).errors).toContainEqual({
+      file: "archmap.config.json",
+      message: "looks like a url with credentials",
+    });
+  });
+
+  it("fails on an old save ledger that hasn't been migrated", () => {
+    config();
+    write("architecture/saves/0001.json", "{}\n");
+    const r = runCheck(root, dir, {});
+    expect(r.errors).toContainEqual({
+      file: "",
+      message: `This map uses the old save ledger. Run "${cliCommand(r.map.config, dir, root)} migrate" first.`,
+    });
+    expect(formatCheck(r, {}).ok).toBe(false);
+    api();
+    expect(
+      messages(runCheck(root, dir)).some((m) => m.includes("save ledger")),
+    ).toBe(false);
+  });
+
   it("reports an unconfirmed route lead as a warning, ok unless --strict", () => {
     config();
     api();

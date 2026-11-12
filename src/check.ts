@@ -1,6 +1,6 @@
 // `archmap check`: validate the map against itself and the repo, and report scanner leads.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gateProblems } from "./gate.ts";
 import { loadMap } from "./map/load.ts";
@@ -11,6 +11,7 @@ import { unconfirmedLeads } from "./map/leads.ts";
 import type { Lead } from "./map/leads.ts";
 import { scan } from "./scan/index.ts";
 import type { Doc, Finding, LoadedMap, Result } from "./map/types.ts";
+import { cliCommand } from "./version.ts";
 
 export type CheckResult = {
   errors: Finding[];
@@ -19,8 +20,17 @@ export type CheckResult = {
   map: LoadedMap;
 };
 
+/** How check words a scanner lead it can't find on the map. */
+export const LEAD_WARNING = "unconfirmed lead: ";
+
+const configText = (dir: string): string => {
+  const file = join(dir, "archmap.config.json");
+  return existsSync(file) ? readFileSync(file, "utf8") : "";
+};
+
 const secretProblems = (map: LoadedMap): Finding[] => {
   const texts: [string, string][] = [
+    ["archmap.config.json", configText(map.dir)],
     ["README.md", map.readme],
     ...map.docs.map((d): [string, string] => [
       d.file,
@@ -48,6 +58,11 @@ export const runCheck = (
     ...secretProblems(map),
     ...(opts.base ? gateProblems(root, dir, opts.base) : []),
   ];
+  if (!map.docs.length && existsSync(join(dir, "saves")))
+    errors.push({
+      file: "",
+      message: `This map uses the old save ledger. Run "${cliCommand(map.config, dir, root)} migrate" first.`,
+    });
   if (
     !map.config.name &&
     !map.fileErrors.some((f) => f.file === "archmap.config.json")
@@ -57,7 +72,7 @@ export const runCheck = (
   const warnings: Finding[] = [
     ...leads.map((l) => ({
       file: l.file,
-      message: `unconfirmed lead: ${l.text}`,
+      message: `${LEAD_WARNING}${l.text}`,
     })),
     ...plannedWithEvidence(root, map.docs),
   ];

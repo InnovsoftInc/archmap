@@ -115,7 +115,38 @@ describe("brief", () => {
     expect(out).toContain("Map files that cover them:");
     expect(out).toContain("- services/api.md");
     expect(out.match(/- services\/api\.md/g)).toHaveLength(1);
-    expect(out).toContain(".no-change");
+  });
+
+  it("tells a person to add the trailer, and only the agent run to write .no-change", () => {
+    api();
+    initRepo();
+    write("other/d.ts", "d2\n");
+    const forPerson = brief(root, dir(), { task: "update", base: "HEAD" });
+    expect(forPerson).not.toContain(".no-change");
+    expect(forPerson).toContain(
+      "If nothing on the map needs to change, add `Archmap: none - <reason>` to your commit message",
+    );
+    const forAgent = brief(root, dir(), {
+      task: "update",
+      base: "HEAD",
+      forAgent: true,
+    });
+    expect(forAgent).toContain("architecture/.no-change");
+    expect(forAgent).not.toContain("Archmap: none");
+  });
+
+  it("lists leads only under Leads from scan, not in the check results", () => {
+    write(
+      "apps/api/src/routes.ts",
+      'import express from "express";\nconst app = express();\napp.get("/r1", (_req, res) => res.send("ok"));\n',
+    );
+    const out = brief(root, dir(), { task: "setup" });
+    const results = out
+      .split("## Current check results")[1]
+      .split("## Leads")[0];
+    expect(results).not.toContain("unconfirmed lead");
+    expect(results).not.toContain("GET /r1");
+    expect(out.split("## Leads from scan")[1]).toContain("GET /r1");
   });
 
   it("omits the map files line when none cover the change", () => {

@@ -80,7 +80,42 @@ describe("CI templates", () => {
     const az = load("azure-pipelines");
     expect(az).toContain("Archmap: none - ");
     expect(az).toContain("ne(variables['System.PullRequest.IsFork'], 'True')");
-    expect(az).toContain("persistCredentials: true");
+  });
+
+  it("keeps the push credential away from the agent", () => {
+    const { jobs } = github();
+    const checkout = jobs.map.steps.find((s) =>
+      String(s.uses).startsWith("actions/checkout"),
+    );
+    expect(checkout?.with).toMatchObject({ "persist-credentials": false });
+    expect(JSON.stringify(checkout?.with)).not.toContain("ARCHMAP_PUSH_TOKEN");
+    const push = String(jobs.map.steps.find((s) => s.id === "push")?.run);
+    expect(push).toContain(
+      'push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"',
+    );
+    const agent = jobs.map.steps.find((s) => String(s.run).includes(" agent "));
+    expect(JSON.stringify(agent?.env)).not.toContain("PUSH_TOKEN");
+
+    const doc = parse(load("azure-pipelines")) as {
+      stages: { jobs: { steps: Step[] }[] }[];
+    };
+    const steps = doc.stages[0]?.jobs[0]?.steps ?? [];
+    expect(steps[0]).toMatchObject({
+      checkout: "self",
+      persistCredentials: false,
+    });
+    const azPush = steps.find((s) => s.name === "push");
+    expect(String(azPush?.bash)).toContain(
+      'git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" push',
+    );
+    expect(azPush?.env).toMatchObject({
+      SYSTEM_ACCESSTOKEN: "$(System.AccessToken)",
+    });
+    const azAgent = steps.find((s) => String(s.bash).includes(" agent "));
+    expect(JSON.stringify(azAgent?.env)).not.toContain("AccessToken");
+    // branch names reach bash through env, never macro-expanded into the script
+    for (const s of steps)
+      expect(String(s.bash ?? "")).not.toContain("$(System.PullRequest");
   });
 
   it("GitHub check job checks out the head sha, and the agent step fails when the agent does", () => {

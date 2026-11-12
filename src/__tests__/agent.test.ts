@@ -200,6 +200,70 @@ fs.writeFileSync("architecture/new.md", "x\\n");
     expect(read("apps/other.ts")).toBe("export const other = 1;\n");
   });
 
+  it("undoes the agent's commits and keeps only its map edits", () => {
+    config({
+      command: node(`
+const fs = require("node:fs");
+const { execSync } = require("node:child_process");
+fs.mkdirSync("architecture/services", { recursive: true });
+fs.writeFileSync("architecture/services/x.md", ${JSON.stringify(SERVICE)});
+fs.writeFileSync("apps/other.ts", "export const changed = 1;\\n");
+fs.writeFileSync("apps/new.ts", "export const added = 1;\\n");
+execSync("git add -A && git commit -q -m agent");
+`),
+    });
+    commit("config");
+    const before = git("rev-parse", "HEAD");
+    const r = runAgent(root, dir(), {});
+    expect(git("rev-parse", "HEAD")).toBe(before);
+    expect(read("architecture/services/x.md")).toBe(SERVICE);
+    expect(read("apps/other.ts")).toBe("export const other = 1;\n");
+    expect(exists("apps/new.ts")).toBe(false);
+    expect(r.lines).toContain(
+      "The agent made commits; they were undone and only map edits kept.",
+    );
+    expect(git("status", "--porcelain")).toBe(
+      "A  architecture/services/x.md\n",
+    );
+  });
+
+  it("deletes a .no-change left from an earlier run before running the agent", () => {
+    config({
+      command: node(
+        `require("node:fs").writeFileSync("architecture/ran.txt", "x")`,
+      ),
+    });
+    commit("config");
+    write("architecture/.no-change", "stale reason\n");
+    const r = runAgent(root, dir(), {});
+    expect(exists("architecture/.no-change")).toBe(false);
+    expect(r.lines.join("\n")).not.toContain("No map change");
+  });
+
+  it("deletes .no-change after a failed run", () => {
+    config({
+      command: node(
+        `require("node:fs").writeFileSync("architecture/.no-change", "nothing\\n"); process.exit(2)`,
+      ),
+    });
+    commit("config");
+    const r = runAgent(root, dir(), {});
+    expect(r.ok).toBe(false);
+    expect(exists("architecture/.no-change")).toBe(false);
+  });
+
+  it("tells the agent to use .no-change", () => {
+    config({
+      command: node(
+        `require("node:fs").writeFileSync("architecture/brief-seen.txt", require("node:fs").readFileSync(0, "utf8"))`,
+      ),
+    });
+    commit("config");
+    write("apps/other.ts", "export const other = 2;\n");
+    runAgent(root, dir(), { task: "update", base: "HEAD" });
+    expect(read("architecture/brief-seen.txt")).toContain(".no-change");
+  });
+
   it("reads, deletes and prints .no-change as the last line", () => {
     config({
       command: node(

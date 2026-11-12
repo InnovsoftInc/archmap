@@ -29,8 +29,9 @@ describe("init", () => {
     expect(config.archmap).toBe(VERSION);
     expect(config.name).toBe("shop");
     expect(config.agent.command).toBe(
-      "claude -p --permission-mode acceptEdits",
+      `claude -p --permission-mode acceptEdits --allowedTools "Bash(${CLI} check:*)" "Bash(${CLI} brief:*)"`,
     );
+    expect(read("architecture", ".gitignore")).toBe(".no-change\n");
     expect(existsSync(join(root, "architecture", "README.md"))).toBe(true);
     const agents = read("AGENTS.md");
     expect(agents.startsWith("# Agent notes")).toBe(true);
@@ -93,6 +94,23 @@ describe("init", () => {
       "git status --porcelain -- docs/map",
     );
     expect(r.lines.at(-1)).toContain(`${CLI} --dir docs/map brief`);
+  });
+
+  it("lets the default agent run check and brief for a non-default folder", () => {
+    init(root, { dir: "docs/map" });
+    const config = JSON.parse(read("docs", "map", "archmap.config.json"));
+    expect(config.agent.command).toContain(
+      `"Bash(${CLI} --dir docs/map check:*)"`,
+    );
+    expect(read("docs", "map", ".gitignore")).toBe(".no-change\n");
+  });
+
+  it("adds .no-change to an existing map .gitignore once", () => {
+    mkdirSync(join(root, "architecture"));
+    writeFileSync(join(root, "architecture", ".gitignore"), "tmp/\n");
+    init(root, {});
+    init(root, {});
+    expect(read("architecture", ".gitignore")).toBe("tmp/\n.no-change\n");
   });
 
   it("uses a configured cli when the existing config sets one", () => {

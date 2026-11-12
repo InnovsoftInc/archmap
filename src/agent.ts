@@ -24,6 +24,19 @@ const inHead = (root: string, path: string): boolean => {
   }
 };
 
+/** The commit HEAD points at, or null when there is none yet. */
+const headCommit = (root: string): string | null => {
+  try {
+    return execFileSync("git", ["rev-parse", "--verify", "-q", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+};
+
 /** The map folder relative to root, with a trailing slash ("" when it is the root). */
 const mapPrefix = (root: string, dir: string): string => {
   const rel = relative(resolve(root), resolve(root, dir)).split("\\").join("/");
@@ -100,7 +113,10 @@ export const runAgent = (
       };
   }
 
-  const text = brief(root, dir, opts);
+  // A .no-change left from an earlier run must not answer for this one.
+  rmSync(join(dir, ".no-change"), { force: true });
+  const text = brief(root, dir, { ...opts, forAgent: true });
+  const head = headCommit(root);
   const before = dirtyState(root);
   const substituted = command.includes("{brief}");
   const run = spawnSync(
@@ -114,14 +130,23 @@ export const runAgent = (
       stdio: [substituted ? "ignore" : "pipe", "inherit", "inherit"],
     },
   );
+  // Commits the agent made are undone, keeping their changes in the working tree, so
+  // the same rule (only map edits stay) covers committed and uncommitted edits.
+  const committed = head !== null && headCommit(root) !== head;
+  if (committed && head) git(root, ["reset", "-q", "--soft", head]);
   const lines = keepOnlyMapEdits(
     root,
     mapPrefix(root, dir),
     before,
     dirtyState(root),
   );
+  if (committed)
+    lines.push(
+      "The agent made commits; they were undone and only map edits kept.",
+    );
 
   if (run.error || run.status !== 0) {
+    rmSync(join(dir, ".no-change"), { force: true });
     const code = run.status ?? run.signal ?? run.error?.message ?? "unknown";
     return {
       ok: false,

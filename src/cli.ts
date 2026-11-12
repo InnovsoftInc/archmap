@@ -49,8 +49,11 @@ Options: --dir <folder> (default: architecture)
 
 const TASKS: Task[] = ["setup", "update", "review", "hosting"];
 
-const print = (r: Result): void => {
-  r.lines.forEach((l) => (r.ok ? console.log(l) : console.error(l)));
+/** Prints the result: to stdout when it passed or is JSON (for a machine to read), else to stderr. */
+const print = (r: Result, opts: { json?: boolean } = {}): void => {
+  r.lines.forEach((l) =>
+    r.ok || opts.json ? console.log(l) : console.error(l),
+  );
   if (!r.ok) process.exitCode = 1;
 };
 
@@ -120,6 +123,7 @@ const main = async (argv: string[]): Promise<void> => {
           strict: values.strict,
           json: values.json,
         }),
+        { json: values.json },
       );
     case "brief":
       return void console.log(brief(root, dir, { task, base: values.base }));

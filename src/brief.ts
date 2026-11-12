@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { runCheck } from "./check.ts";
+import { LEAD_WARNING, runCheck } from "./check.ts";
 import { changedFiles } from "./git.ts";
 import { PACKAGE_ROOT } from "./home.ts";
 import { evidenceOf } from "./map/evidence.ts";
@@ -38,7 +38,7 @@ const covers = (doc: Doc, file: string): boolean =>
     return file === prefix || file.startsWith(`${prefix}/`);
   }) || evidenceOf(doc).some((c) => c.evidence.split("#")[0] === file);
 
-const groundRules = (task: Task, dir: string): string => {
+const groundRules = (task: Task, dir: string, forAgent: boolean): string => {
   const rules = [
     "The existing map, including people's edits, stands unless the code contradicts it.",
     "Write for every audience, in heading order: a plain summary first, then `## How it works`, then `## For developers`.",
@@ -47,7 +47,9 @@ const groundRules = (task: Task, dir: string): string => {
   ];
   if (task === "update")
     rules.push(
-      `If nothing on the map needs to change, write one line saying why to \`${dir}/.no-change\` and edit nothing else.`,
+      forAgent
+        ? `If nothing on the map needs to change, write one line saying why to \`${dir}/.no-change\` and edit nothing else.`
+        : "If nothing on the map needs to change, add `Archmap: none - <reason>` to your commit message and edit nothing.",
     );
   return rules.map((r) => `- ${r}`).join("\n");
 };
@@ -55,7 +57,7 @@ const groundRules = (task: Task, dir: string): string => {
 export const brief = (
   root: string,
   dir: string,
-  opts: { task?: Task; base?: string },
+  opts: { task?: Task; base?: string; forAgent?: boolean },
 ): string => {
   const check = runCheck(root, dir);
   const task = pickTask(check.map.docs, opts);
@@ -98,9 +100,10 @@ export const brief = (
     ...check.errors.map(
       (f) => `error: ${f.file ? `${f.file}: ` : ""}${f.message}`,
     ),
-    ...check.warnings.map(
-      (f) => `warning: ${f.file ? `${f.file}: ` : ""}${f.message}`,
-    ),
+    // Leads are listed (and capped) under "Leads from scan", not here.
+    ...check.warnings
+      .filter((f) => !f.message.startsWith(LEAD_WARNING))
+      .map((f) => `warning: ${f.file ? `${f.file}: ` : ""}${f.message}`),
   ];
   const leads = check.leads
     .slice(0, MAX_LEADS)
@@ -119,7 +122,7 @@ export const brief = (
     "",
     "## Ground rules",
     "",
-    groundRules(task, folder),
+    groundRules(task, folder, opts.forAgent ?? false),
     "",
     "## Current check results",
     "",

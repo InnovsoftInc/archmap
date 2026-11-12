@@ -133,6 +133,16 @@ describe("archmap CLI", () => {
     expect(run(["scan"]).stderr).not.toContain("pins 0.0.1");
   });
 
+  it("check --json writes the JSON to stdout even when it fails", () => {
+    write("architecture/archmap.config.json", JSON.stringify({ name: "T" }));
+    write("architecture/services/bad.md", "---\nstatus: nope\n---\nx\n");
+    const r = run(["check", "--json"]);
+    expect(r.status).toBe(1);
+    const out = JSON.parse(r.stdout) as { errors: unknown[] };
+    expect(out.errors.length).toBeGreaterThan(0);
+    expect(r.stderr).toBe("");
+  });
+
   it("brief prints the brief to stdout", () => {
     run(["init", "--name", "T"]);
     const r = run(["brief", "--task", "setup"]);

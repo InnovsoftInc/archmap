@@ -116,6 +116,47 @@ describe("map gate", () => {
     expect(problem()).toContain("package.json: dependencies changed");
   });
 
+  it("counts package.json only when dependency names or workspaces change", () => {
+    write(
+      "package.json",
+      pkg({
+        dependencies: { express: "^4.18.0" },
+        devDependencies: { vitest: "^3" },
+      }),
+    );
+    commit("dev deps");
+    write(
+      "package.json",
+      pkg({
+        dependencies: { express: "^5.0.0" },
+        devDependencies: { vitest: "^4" },
+      }),
+    );
+    expect(gateProblems(root, dir(), "HEAD")).toEqual([]);
+    write(
+      "package.json",
+      pkg({
+        dependencies: { express: "^4.18.0", pg: "^8" },
+        devDependencies: { vitest: "^3" },
+      }),
+    );
+    expect(problem()).toContain("package.json: dependencies changed");
+    write(
+      "package.json",
+      pkg({ dependencies: {}, devDependencies: { vitest: "^3" } }),
+    );
+    expect(problem()).toContain("package.json: dependencies changed");
+    write(
+      "package.json",
+      pkg({
+        dependencies: { express: "^4.18.0" },
+        devDependencies: { vitest: "^3" },
+        workspaces: ["apps/*"],
+      }),
+    );
+    expect(problem()).toContain("package.json: dependencies changed");
+  });
+
   it("passes a version-only bump in a workspace package.json with an unconfirmed app", () => {
     write("tools/lint/package.json", pkg({ name: "lint" }));
     commit("tool");
@@ -175,6 +216,34 @@ describe("map gate", () => {
   it("passes with an Archmap: none trailer in a commit since base", () => {
     write("apps/api/src/routes.ts", "// changed\n");
     commit("tweak\n\nArchmap: none - only a comment");
+    expect(gateProblems(root, dir(), "HEAD~1")).toEqual([]);
+  });
+
+  it("does not let a trailer cover architectural changes made after it", () => {
+    write("apps/api/src/routes.ts", "// changed\n");
+    commit("tweak\n\nArchmap: none - only a comment");
+    write("infra/main.tf", "x\n");
+    commit("infra");
+    expect(problem("HEAD~2")).toContain("infra/main.tf: structural file");
+    write("architecture/services/api.md", "---\nname: API\n---\n");
+    commit("map");
+    expect(gateProblems(root, dir(), "HEAD~3")).toEqual([]);
+  });
+
+  it("does not let a map edit cover architectural changes made after it", () => {
+    write("architecture/services/api.md", "---\nname: API\n---\n");
+    commit("map");
+    write("infra/main.tf", "x\n");
+    commit("infra");
+    expect(problem("HEAD~2")).toContain("infra/main.tf: structural file");
+  });
+
+  it("treats uncommitted architectural changes as the newest", () => {
+    write("architecture/services/api.md", "---\nname: API\n---\n");
+    commit("map\n\nArchmap: none - covered");
+    write("infra/main.tf", "x\n");
+    expect(problem("HEAD~1")).toContain("infra/main.tf: structural file");
+    write("architecture/services/web.md", "---\nname: Web\n---\n");
     expect(gateProblems(root, dir(), "HEAD~1")).toEqual([]);
   });
 

@@ -65,21 +65,45 @@ export const changedFiles = (root: string, base: string): string[] => {
             `${base}...HEAD`,
           ]),
         ),
-        ...lines(
-          git(root, [
-            "diff",
-            "--name-only",
-            "--no-renames",
-            "--relative",
-            "HEAD",
-          ]),
-        ),
-        ...lines(git(root, ["ls-files", "--others", "--exclude-standard"])),
+        ...uncommittedFiles(root),
       ]),
     ].sort();
   } catch (err) {
     return fail(gitError(err), err);
   }
+};
+
+/** Files that differ from HEAD (staged or not) or are untracked, relative to `root`. */
+export const uncommittedFiles = (root: string): string[] => [
+  ...new Set([
+    ...lines(
+      git(root, ["diff", "--name-only", "--no-renames", "--relative", "HEAD"]),
+    ),
+    ...lines(git(root, ["ls-files", "--others", "--exclude-standard"])),
+  ]),
+];
+
+export type Commit = { message: string; files: string[] };
+
+/** The commits in `base..HEAD`, oldest first, with their messages and the files each touched (relative to `root`). */
+export const commitsSince = (root: string, base: string): Commit[] => {
+  const parts = git(root, [
+    "log",
+    "--reverse",
+    "--no-renames",
+    "--relative",
+    "--name-only",
+    "--format=%x00%H%x00%B%x00",
+    `${base}..HEAD`,
+  ]).split("\0");
+  const out: Commit[] = [];
+  // parts: "", then (hash, message, files) per commit.
+  for (let i = 1; i + 1 < parts.length; i += 3)
+    out.push({
+      message: parts.at(i + 1) ?? "",
+      files: lines(parts.at(i + 2) ?? ""),
+    });
+  return out;
 };
 
 /** The commit messages in `base..HEAD`. */

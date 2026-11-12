@@ -76,6 +76,18 @@ Add `ANTHROPIC_API_KEY` (or your agent's key) as a secret pipeline variable. The
 
 Other CI systems run the same two commands.
 
+### The agent command
+
+`init` sets `agent.command` to Claude Code, allowed to edit files and to run `archmap check` and `archmap brief` without asking, since nobody is there to approve a command in CI:
+
+```
+claude -p --permission-mode acceptEdits --allowedTools "Bash(<cli> check:*)" "Bash(<cli> brief:*)"
+```
+
+`<cli>` is the command that runs archmap for this map. Another agent needs the same: permission to edit files in the map folder and to run `check` without a prompt. The command gets the brief on stdin, or in place of `{brief}` when the command contains it. If the agent decides the map needs no change, it writes the reason to `<map folder>/.no-change` (which `init` adds to the map folder's `.gitignore`); `archmap agent` reads and deletes it, and the `map` job commits the reason as an `Archmap: none` trailer. When you run `brief` yourself instead, add `Archmap: none - <reason>` to your commit message.
+
+The `check` job counts a `package.json` only when the packages it depends on, or its workspaces, change; a version bump alone is not architectural. A map change or `Archmap: none` trailer covers only the architectural changes made before it: a later commit that changes the architecture needs its own.
+
 ## Moving from saves
 
 Projects on archmap 0.3 or earlier keep a `saves/` ledger. Run `archmap migrate` once: it replays the ledger and writes the markdown files, carrying over ids, names, statuses, connections, endpoints, tables, columns, enums, personas and flows. Then run `archmap brief --task review` with your agent to add evidence and write the explanations, and delete `saves/`, `versions.json`, `current.json` and `instructions.md`.

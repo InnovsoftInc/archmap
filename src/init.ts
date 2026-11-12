@@ -90,9 +90,14 @@ export const init = (
       packageName(root) ??
       basename(resolve(root)) ??
       "Architecture";
-    const text = template("config.json")
+    const json = (v: string) => JSON.stringify(v).slice(1, -1);
+    const draft = template("config.json")
       .replace("__VERSION__", VERSION)
-      .replace("__NAME__", () => JSON.stringify(name).slice(1, -1));
+      .replace("__NAME__", () => json(name));
+    // The default agent may run check and brief without asking, so it works in CI.
+    const cli = cliCommand(JSON.parse(draft) as MapConfig, dir, root);
+    const command = `claude -p --permission-mode acceptEdits --allowedTools "Bash(${cli} check:*)" "Bash(${cli} brief:*)"`;
+    const text = draft.replace("__AGENT_COMMAND__", () => json(command));
     write(configPath, text);
     config = JSON.parse(text) as MapConfig;
     lines.push(`Wrote ${rel}/archmap.config.json (archmap ${VERSION}).`);
@@ -105,6 +110,10 @@ export const init = (
     write(readme, template("README.md"));
     lines.push(`Wrote ${rel}/README.md.`);
   }
+
+  // `archmap agent` reads and deletes .no-change; it is never committed.
+  if (appendLineOnce(join(mapDir, ".gitignore"), ".no-change"))
+    lines.push(`Added .no-change to ${rel}/.gitignore.`);
 
   const agents = join(root, "AGENTS.md");
   if (!existsSync(agents)) writeFileSync(agents, "# Agent notes\n");

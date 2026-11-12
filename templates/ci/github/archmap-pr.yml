@@ -43,9 +43,9 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          # a push with the default token starts no new run, so use a
-          # GitHub App or fine-grained token with contents write
-          token: ${{ secrets.ARCHMAP_PUSH_TOKEN || github.token }}
+          # no stored credential: the agent runs in this checkout, so the
+          # push token is used only in the push step
+          persist-credentials: false
       # the map job's own commits start with "archmap: "; don't answer them
       - name: Skip the map job's own commits
         id: guard
@@ -93,8 +93,10 @@ jobs:
             committed=true
           fi
           if [ "$committed" = true ]; then
+            # a push with the default token starts no new run, so use a
+            # GitHub App or fine-grained token with contents write
             if [ -n "$PUSH_TOKEN" ]; then
-              git push origin "HEAD:$HEAD_REF"
+              git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
               echo "pushed=true" >> "$GITHUB_OUTPUT"
             else
               echo "::warning::The map job has a commit to push but no ARCHMAP_PUSH_TOKEN secret. Add one (a push with the default token starts no new run, so the required check would be missing on the new head). Nothing was pushed."

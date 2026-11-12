@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob, relative, resolve } from "node:path";
-import { changedFiles, commitMessages, fileAt } from "./git.ts";
+import { changedFiles, commitsSince, fileAt, uncommittedFiles } from "./git.ts";
 import { evidenceOf } from "./map/evidence.ts";
 import { loadMap } from "./map/load.ts";
 import { leadsOf, unconfirmedLeads } from "./map/leads.ts";
@@ -48,12 +48,17 @@ const PACKAGE_KEYS = [
 const matches = (file: string, globs: string[]): string | undefined =>
   globs.find((g) => matchesGlob(file, g));
 
+/** What in a package.json is architectural: the package names it depends on, and its workspaces. Versions are not. */
 const dependencyShape = (text: string | null): string | null => {
   if (text === null) return null;
   try {
     const json = JSON.parse(text) as Record<string, unknown>;
     return JSON.stringify(
-      PACKAGE_KEYS.map((k) => Reflect.get(json, k) ?? null),
+      PACKAGE_KEYS.map((k) => {
+        const v: unknown = Reflect.get(json, k);
+        if (k === "workspaces") return v ?? null;
+        return v && typeof v === "object" ? Object.keys(v).sort() : [];
+      }),
     );
   } catch {
     return null;
@@ -155,6 +160,32 @@ export const architecturalFiles = (
 
 const NO_CHANGE_TRAILER = /^Archmap: none - \S/m;
 
+/**
+ * Whether the architectural changes are covered: a map change (other than .no-change) or an
+ * "Archmap: none" trailer in the last commit that touches an architectural file, or later.
+ * Uncommitted changes count as the newest.
+ */
+const covered = (
+  root: string,
+  prefix: string,
+  base: string,
+  hits: GateHit[],
+): boolean => {
+  const architectural = new Set(hits.map((h) => h.file));
+  const isMap = (f: string) =>
+    f.startsWith(prefix) && f !== `${prefix}.no-change`;
+  const uncommitted = uncommittedFiles(root);
+  if (uncommitted.some(isMap)) return true;
+  if (uncommitted.some((f) => architectural.has(f))) return false;
+  const commits = commitsSince(root, base);
+  const last = commits.findLastIndex((c) =>
+    c.files.some((f) => architectural.has(f)),
+  );
+  return commits
+    .slice(Math.max(last, 0))
+    .some((c) => c.files.some(isMap) || NO_CHANGE_TRAILER.test(c.message));
+};
+
 export const gateProblems = (
   root: string,
   dir: string,
@@ -162,12 +193,7 @@ export const gateProblems = (
 ): Finding[] => {
   const hits = architecturalFiles(root, dir, base);
   if (!hits.length) return [];
-  const prefix = mapPrefix(root, dir);
-  const mapChanged = changedFiles(root, base).some(
-    (f) => f.startsWith(prefix) && f !== `${prefix}.no-change`,
-  );
-  if (mapChanged || NO_CHANGE_TRAILER.test(commitMessages(root, base)))
-    return [];
+  if (covered(root, mapPrefix(root, dir), base, hits)) return [];
   const map = loadMap(dir);
   const shown = hits.slice(0, 5).map((h) => `  ${h.file}: ${h.why}`);
   if (hits.length > 5) shown.push(`  …and ${hits.length - 5} more`);

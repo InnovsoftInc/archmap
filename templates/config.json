@@ -2,7 +2,7 @@
   "archmap": "__VERSION__",
   "name": "__NAME__",
   "agent": {
-    "command": "claude -p --permission-mode acceptEdits",
+    "command": "__AGENT_COMMAND__",
     "skip": [
       "**/*.test.*",
       "**/__tests__/**",

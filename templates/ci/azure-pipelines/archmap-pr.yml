@@ -19,25 +19,29 @@ stages:
         condition: ne(variables['System.PullRequest.IsFork'], 'True')
         continueOnError: true
         steps:
+          # no stored credential: the agent runs in this checkout, so the
+          # access token goes only to the steps that fetch and push
           - checkout: self
             fetchDepth: 0
-            persistCredentials: true
+            persistCredentials: false
           - task: NodeTool@0
             inputs:
               versionSpec: 24.x
           # the map job's own commits start with "archmap: "; don't answer them
           - bash: |
               set -euo pipefail
-              src="$(System.PullRequest.SourceBranch)"
-              src="${src#refs/heads/}"
-              tgt="$(System.PullRequest.TargetBranch)"
-              tgt="${tgt#refs/heads/}"
-              git fetch origin "$src" "$tgt"
+              src="${SOURCE_BRANCH#refs/heads/}"
+              tgt="${TARGET_BRANCH#refs/heads/}"
+              git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" fetch origin "$src" "$tgt"
               git checkout -B "$src" "origin/$src"
               if [[ "$(git log -1 --format=%s)" == "archmap: "* ]]; then
                 echo "##vso[task.setvariable variable=skip]true"
               fi
             displayName: Skip the map job's own commits
+            env:
+              SOURCE_BRANCH: $(System.PullRequest.SourceBranch)
+              TARGET_BRANCH: $(System.PullRequest.TargetBranch)
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
           # the agent that archmap.config.json's agent.command runs; swap this
           # step to install a different agent
           - bash: npm install -g @anthropic-ai/claude-code
@@ -45,17 +49,16 @@ stages:
             condition: and(succeeded(), ne(variables.skip, 'true'))
           - bash: |
               set -euo pipefail
-              tgt="$(System.PullRequest.TargetBranch)"
-              tgt="${tgt#refs/heads/}"
+              tgt="${TARGET_BRANCH#refs/heads/}"
               __CLI__ agent --base "origin/$tgt" | tee "$(Agent.TempDirectory)/archmap-agent.txt"
             displayName: Update the map
             condition: and(succeeded(), ne(variables.skip, 'true'))
             env:
+              TARGET_BRANCH: $(System.PullRequest.TargetBranch)
               ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           - bash: |
               set -euo pipefail
-              src="$(System.PullRequest.SourceBranch)"
-              src="${src#refs/heads/}"
+              src="${SOURCE_BRANCH#refs/heads/}"
               git config user.name "Archmap"
               git config user.email "archmap@users.noreply.invalid"
               committed=false
@@ -71,12 +74,15 @@ stages:
                 committed=true
               fi
               if [ "$committed" = true ]; then
-                git push origin "HEAD:refs/heads/$src"
+                git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" push origin "HEAD:refs/heads/$src"
                 echo "##vso[task.setvariable variable=pushed;isOutput=true]true"
               fi
             name: push
             displayName: Commit and publish the map
             condition: and(succeeded(), ne(variables.skip, 'true'))
+            env:
+              SOURCE_BRANCH: $(System.PullRequest.SourceBranch)
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
   # Required, no AI: fails the pull request when the map is invalid or the
   # change touches the architecture without touching the map.
@@ -95,8 +101,10 @@ stages:
               versionSpec: 24.x
           - bash: |
               set -euo pipefail
-              tgt="$(System.PullRequest.TargetBranch)"
-              tgt="${tgt#refs/heads/}"
-              git fetch origin "$tgt"
+              tgt="${TARGET_BRANCH#refs/heads/}"
+              git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" fetch origin "$tgt"
               __CLI__ check --base "origin/$tgt"
             displayName: Check the map
+            env:
+              TARGET_BRANCH: $(System.PullRequest.TargetBranch)
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
