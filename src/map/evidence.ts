@@ -60,6 +60,15 @@ const split = (evidence: string): [string, string | undefined] => {
     : [evidence.slice(0, at), evidence.slice(at + 1)];
 };
 
+// A symbol must appear as a whole identifier: `#create` isn't satisfied by
+// `createdAt`. Shorter than 3 characters, it would match almost any file.
+const MIN_SYMBOL = 3;
+const hasSymbol = (text: string, symbol: string): boolean => {
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  // eslint-disable-next-line security/detect-non-literal-regexp -- escaped above
+  return new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`).test(text);
+};
+
 /** Why `evidence` doesn't hold, or null when it does. */
 const evidenceProblem = (root: string, c: Cited): string | null => {
   const [path, symbol] = split(c.evidence);
@@ -67,7 +76,9 @@ const evidenceProblem = (root: string, c: Cited): string | null => {
   if (abs === null || (existsSync(abs) && !isFile(abs)))
     return `${c.field} ${c.evidence} must be a file inside the repo`;
   if (!isFile(abs)) return `${c.field} ${c.evidence} does not exist`;
-  if (symbol && !readFileSync(abs, "utf8").includes(symbol))
+  if (symbol && symbol.length < MIN_SYMBOL)
+    return `${c.field}: ${JSON.stringify(symbol)} is too short to verify`;
+  if (symbol && !hasSymbol(readFileSync(abs, "utf8"), symbol))
     return `${c.field}: ${JSON.stringify(symbol)} not found in ${path}`;
   return null;
 };

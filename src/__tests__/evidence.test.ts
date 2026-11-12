@@ -103,6 +103,35 @@ describe("evidenceProblems", () => {
     expect(messages([doc])).toEqual([]);
   });
 
+  it("matches the symbol as a whole identifier", () => {
+    write("apps/api/c.ts", "export const create = (createdAt) => {};");
+    const cite = (symbol: string) =>
+      service({
+        endpoints: [{ route: "GET /x", evidence: `apps/api/c.ts#${symbol}` }],
+      });
+    expect(messages([cite("create")])).toEqual([]);
+    write("apps/api/c.ts", "export const row = { createdAt: 1 };");
+    expect(messages([cite("create")])).toEqual([
+      'endpoints[0].evidence: "create" not found in apps/api/c.ts',
+    ]);
+    // Regex characters in a symbol are literal.
+    write("apps/api/c.ts", "const x = a$b + 1;");
+    expect(messages([cite("a$b")])).toEqual([]);
+    expect(messages([cite("a.b")])).toEqual([
+      'endpoints[0].evidence: "a.b" not found in apps/api/c.ts',
+    ]);
+  });
+
+  it("rejects a symbol shorter than 3 characters", () => {
+    write("apps/api/c.ts", "export const e = 1;");
+    const doc = service({
+      endpoints: [{ route: "GET /x", evidence: "apps/api/c.ts#e" }],
+    });
+    expect(messages([doc])).toEqual([
+      'endpoints[0].evidence: "e" is too short to verify',
+    ]);
+  });
+
   it("rejects evidence that leaves the repo or is a folder", () => {
     write("apps/api/c.ts");
     const doc = service({

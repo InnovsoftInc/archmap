@@ -52,6 +52,8 @@ export type LoadedMap = {
   readme: string;
   docs: Doc[];
   fileErrors: Finding[];
+  /** Ids of docs that failed to load; references to them aren't reported as missing. */
+  failedIds: string[];
 };
 
 export type Result = { ok: boolean; lines: string[] };

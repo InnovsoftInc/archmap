@@ -2,9 +2,22 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse } from "yaml";
+import { parse, YAMLError } from "yaml";
 import { FOLDERS } from "./types.ts";
 import type { Doc, Finding, LoadedMap, MapConfig } from "./types.ts";
+
+// The parser's own message ends "at line N, column M:" and a code frame; keep
+// the first part and give the line in the file (the frontmatter starts on
+// line 2).
+const yamlError = (err: unknown): string => {
+  const message = err instanceof Error ? err.message : String(err);
+  const reason = message.split(/ at line \d+|\n/)[0]?.trim() ?? message;
+  const line =
+    err instanceof YAMLError && err.linePos ? err.linePos[0].line + 1 : 0;
+  return line
+    ? `invalid YAML at line ${line}: ${reason}`
+    : `invalid YAML: ${reason}`;
+};
 
 export const splitFrontmatter = (
   text: string,
@@ -17,7 +30,7 @@ export const splitFrontmatter = (
   try {
     data = parse(lines.slice(1, end).join("\n"));
   } catch (err) {
-    return { error: `invalid YAML: ${(err as Error).message}` };
+    return { error: yamlError(err) };
   }
   if (typeof data !== "object" || data === null || Array.isArray(data))
     return { error: "frontmatter must be a YAML mapping" };
@@ -68,6 +81,7 @@ export const loadMap = (dir: string): LoadedMap => {
   const readme = existsSync(readmePath) ? readFileSync(readmePath, "utf8") : "";
 
   const docs: Doc[] = [];
+  const failedIds: string[] = [];
   for (const folder of FOLDERS) {
     const folderDir = join(dir, folder);
     if (!existsSync(folderDir)) continue;
@@ -82,10 +96,11 @@ export const loadMap = (dir: string): LoadedMap => {
       );
       if ("error" in parsed) {
         fileErrors.push({ file, message: parsed.error });
+        failedIds.push(name.slice(0, -3));
         continue;
       }
       docs.push({ id: name.slice(0, -3), folder, file, ...parsed });
     }
   }
-  return { dir, config, readme, docs, fileErrors };
+  return { dir, config, readme, docs, fileErrors, failedIds };
 };

@@ -53,7 +53,7 @@ export const runCheck = (
   const map = loadMap(dir);
   const errors: Finding[] = [
     ...map.fileErrors,
-    ...schemaProblems(map.docs),
+    ...schemaProblems(map.docs, map.failedIds),
     ...evidenceProblems(root, map.docs),
     ...secretProblems(map),
     ...(opts.base ? gateProblems(root, dir, opts.base) : []),

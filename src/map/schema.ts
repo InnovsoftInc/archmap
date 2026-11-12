@@ -197,10 +197,18 @@ const PLACE: Ref = {
   describe: "a service, store or external",
 };
 
-export const schemaProblems = (docs: Doc[]): Finding[] => {
+// `failedIds` are docs that failed to load: their own error is reported once,
+// and references to them count as resolved rather than cascading.
+export const schemaProblems = (
+  docs: Doc[],
+  failedIds: string[] = [],
+): Finding[] => {
   const findings: Finding[] = [];
   const byFolder = (folders: Folder[]) =>
-    new Set(docs.filter((d) => folders.includes(d.folder)).map((d) => d.id));
+    new Set([
+      ...docs.filter((d) => folders.includes(d.folder)).map((d) => d.id),
+      ...failedIds,
+    ]);
   const firstWithId = new Map<string, Doc>();
 
   for (const doc of docs) {

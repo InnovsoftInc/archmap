@@ -56,6 +56,35 @@ describe("runCheck", () => {
     expect(out.lines.at(-1)).toMatch(/^\d+ problems\.$/);
   });
 
+  it("reports a YAML error once, with its line, and no missing-id errors for that file", () => {
+    config();
+    write(
+      "architecture/services/ci-cd.md",
+      "---\nname: CI\nstatus: live\nkind: job\njobs:\n  - name: Lint\n    evidence: .github/workflows/lint.yml#name: Lint\n---\nx\n",
+    );
+    write(
+      "architecture/flows/ship.md",
+      "---\nname: Ship\nstatus: live\npersona: dev\nsteps:\n  - by: ci-cd\n    at: ci-cd\n    does: builds\n---\nx\n",
+    );
+    write(
+      "architecture/personas/dev.md",
+      "---\nname: Dev\nstatus: live\nneeds: [ship]\n---\nx\n",
+    );
+    const r = runCheck(root, dir);
+    expect(r.map.failedIds).toEqual(["ci-cd"]);
+    expect(
+      r.errors.filter(
+        (e) => e.file === "services/ci-cd.md" || e.message.includes("ci-cd"),
+      ),
+    ).toEqual([
+      {
+        file: "services/ci-cd.md",
+        message:
+          "invalid YAML at line 7: Nested mappings are not allowed in compact mappings",
+      },
+    ]);
+  });
+
   it("reports secrets in the README and a config with no name", () => {
     write("architecture/archmap.config.json", "[]");
     write("architecture/README.md", "key AKIAABCDEFGHIJKLMNOP\n");
