@@ -240,6 +240,41 @@ describe("routes", () => {
     ]);
   });
 
+  it("finds routes on any router name and applies mount prefixes", () => {
+    const mounts = fixture("express-mounts");
+    const r = (file: string, method: string, path: string) => ({
+      file: `apps/api/src/routes/${file}`,
+      method,
+      path,
+    });
+    expect(routesReader(mounts, walk(mounts))).toEqual({
+      routes: [
+        r("admin.ts", "DELETE", "/api/v1/admin/cache"),
+        r("admin.ts", "GET", "/api/v1/admin/reports/daily"),
+        r("healthcheck.ts", "GET", "/api/v1/healthcheck"),
+        r("index.ts", "GET", "/api/v1/version"),
+        r("orphan.ts", "OPTIONS", "/orphan"),
+        r("permits.ts", "POST", "/api/v1/permits"),
+        r("permits.ts", "GET", "/api/v1/permits/:id"),
+      ],
+      routeFiles: [],
+      unreadable: [],
+    });
+  });
+
+  it("only reads other router names in files that use a server framework", () => {
+    write("src/routes/a.ts", 'thing.get("/a", h);\n');
+    write(
+      "src/routes/b.ts",
+      'import Fastify from "fastify";\nconst api = Fastify();\napi.head("/b", h);\n',
+    );
+    expect(routesReader(tmp, walk(tmp))).toEqual({
+      routes: [{ file: "src/routes/b.ts", method: "HEAD", path: "/b" }],
+      routeFiles: [{ file: "src/routes/a.ts" }],
+      unreadable: [],
+    });
+  });
+
   it("finds Fastify routes", () => {
     expect(routesReader(fastify, walk(fastify)).routes).toEqual([
       { file: "apps/api/src/server.ts", method: "POST", path: "/accounts" },
