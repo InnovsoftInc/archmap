@@ -3,7 +3,7 @@
 
 import { emptyModel } from "./core.ts";
 import type { Column, Model, Table } from "./core.ts";
-import type { Doc, Folder } from "./map/types.ts";
+import type { Doc, Folder, MapConfig } from "./map/types.ts";
 
 export type DocView = {
   folder: Folder;
@@ -169,16 +169,74 @@ export const toViewModel = (docs: Doc[]): Model => {
   return m;
 };
 
-const PRIVATE = new Set(["code", "evidence", "dev"]);
+const ENTRY_PRIVATE = ["code", "evidence"];
+const DOC_PRIVATE = ["code", "evidence", "dev"];
 
-/** A deep copy without the keys that only developers see. */
-export const stripPublic = <T>(value: T): T => {
-  if (Array.isArray(value)) return value.map(stripPublic) as T;
-  if (isObj(value)) {
-    const out: Obj = Object.create(null) as Obj;
-    for (const [k, v] of Object.entries(value))
-      if (!PRIVATE.has(k)) Reflect.set(out, k, stripPublic(v));
-    return out as T;
-  }
-  return value;
+/** A copy of one entry object without the given keys. Nested values are kept as they are. */
+const without = <T>(entry: T, keys: string[]): T => {
+  if (!isObj(entry)) return entry;
+  const out: Obj = Object.create(null) as Obj;
+  for (const [k, v] of Object.entries(entry))
+    if (!keys.includes(k)) Reflect.set(out, k, v);
+  return out as T;
+};
+
+/** An id-keyed collection with each entry passed through `fn`; the ids themselves are never dropped. */
+const eachEntry = <T>(
+  bag: Record<string, T>,
+  fn: (entry: T) => T,
+): Record<string, T> => {
+  const out = Object.create(null) as Record<string, T>;
+  for (const [id, entry] of Object.entries(bag)) Reflect.set(out, id, fn(entry));
+  return out;
+};
+
+const stripEntry = <T>(entry: T): T => without(entry, ENTRY_PRIVATE);
+
+/**
+ * The model without what only developers see: `code` and `evidence` on each
+ * service and part, connection, table, column, enum, persona and flow. Ids are
+ * never looked at, so a table called `evidence` stays.
+ */
+export const stripPublicModel = (m: Model): Model => ({
+  ...m,
+  services: eachEntry(m.services, stripEntry),
+  connections: eachEntry(m.connections, stripEntry),
+  tables: eachEntry(m.tables, (t) => {
+    const table = stripEntry(t);
+    return {
+      ...table,
+      columns: Array.isArray(table.columns)
+        ? table.columns.map(stripEntry)
+        : table.columns,
+    };
+  }),
+  enums: eachEntry(m.enums, stripEntry),
+  personas: eachEntry(m.personas, stripEntry),
+  flows: eachEntry(m.flows, stripEntry),
+});
+
+/** Each doc's view without `code`, `evidence` and the For developers text. */
+export const stripPublicDocs = (
+  docs: Record<string, DocView>,
+): Record<string, DocView> => eachEntry(docs, (d) => without(d, DOC_PRIVATE));
+
+const BRANDING = [
+  "name",
+  "product",
+  "logo",
+  "labels",
+  "theme",
+  "fonts",
+  "links",
+] as const;
+
+/** Only the config keys that brand the viewer; the CLI, agent and ignore settings stay out of a public build. */
+export const publicConfig = (config: MapConfig): Partial<MapConfig> => {
+  const keep: readonly string[] = BRANDING;
+  return Object.fromEntries(
+    Object.entries(config).filter(
+      ([k, v]) => keep.includes(k) && v !== undefined,
+    ),
+  ) as Partial<MapConfig>;
 };

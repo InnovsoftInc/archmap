@@ -1976,6 +1976,8 @@ function showPanel(title, body, mono, st) {
     body;
   panel.hidden = false;
   panel.scrollTop = 0;
+  // Start here sits above the drawer, so it closes whenever a drawer opens.
+  showStart(false);
   $("close").onclick = clearSel;
   if ($("back")) $("back").onclick = goBack;
   panel.querySelectorAll("[data-go]").forEach(function (b) {
@@ -2953,6 +2955,7 @@ $("q").addEventListener("input", function () {
 });
 $("q").addEventListener("keydown", function (ev) {
   if (ev.key !== "Enter" || !query) return;
+  showStart(false);
   var hit = Object.keys(cardEls).filter(matchKey)[0];
   if (!hit) {
     // look in the other view

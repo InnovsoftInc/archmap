@@ -6,19 +6,40 @@ import { createServer, type Server } from "node:http";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { marked } from "marked";
+import { Marked } from "marked";
 import { runCheck } from "./check.ts";
 import { loadMap } from "./map/load.ts";
 import { ensureDir } from "./project.ts";
-import { docSections, stripPublic, toViewModel } from "./view.ts";
+import {
+  docSections,
+  publicConfig,
+  stripPublicDocs,
+  stripPublicModel,
+  toViewModel,
+} from "./view.ts";
 import type { DocView } from "./view.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIEWER = join(HERE, "..", "viewer");
 const STATIC = ["index.html", "app.js", "styles.css"];
 
+const escapeHtml = (s: string): string =>
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+// The map is written by agents and anyone with commit access, and the viewer
+// puts this HTML straight into the page, so raw HTML in the markdown is shown
+// as text, never as markup.
+const markdown = new Marked({
+  renderer: { html: ({ text }) => escapeHtml(text) },
+});
+
 const html = (md: string | undefined): string | undefined =>
-  md === undefined ? undefined : (marked.parse(md, { async: false }) as string);
+  md === undefined ? undefined : markdown.parse(md, { async: false });
 
 /** Everything the viewer needs, in one JSON document. */
 export const siteData = (
@@ -46,12 +67,12 @@ export const siteData = (
   const model = toViewModel(map.docs);
   const body = {
     config: {
-      ...map.config,
+      ...(opts.public ? publicConfig(map.config) : map.config),
       logo: map.config.logo ? "logo" + extname(map.config.logo) : undefined,
     },
     readme: html(map.readme) ?? "",
-    model: opts.public ? stripPublic(model) : model,
-    docs: opts.public ? stripPublic(docs) : docs,
+    model: opts.public ? stripPublicModel(model) : model,
+    docs: opts.public ? stripPublicDocs(docs) : docs,
     ...(opts.public ? {} : { check: { errors, warnings } }),
     dev: opts.dev ?? false,
     public: opts.public ?? false,
@@ -123,7 +144,14 @@ export const serve = (
         .end((err as Error).message);
     }
   });
-  return new Promise((resolve) =>
-    server.listen(port, "127.0.0.1", () => resolve(server)),
-  );
+  return new Promise((resolve, reject) => {
+    server.once("error", (err: NodeJS.ErrnoException) =>
+      reject(
+        err.code === "EADDRINUSE"
+          ? new Error(`Port ${port} is in use. Try --port ${port + 1}.`)
+          : err,
+      ),
+    );
+    server.listen(port, "127.0.0.1", () => resolve(server));
+  });
 };

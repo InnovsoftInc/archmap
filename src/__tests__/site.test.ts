@@ -257,6 +257,115 @@ describe("site data", () => {
     expect(data.public).toBe(true);
   });
 
+  it("--public keeps tables, enums and services whose ids are code, evidence or dev", () => {
+    write(
+      "archmap.config.json",
+      JSON.stringify({
+        name: "Acme",
+        product: "Map",
+        cli: "npx archmap",
+        agent: { command: "secret-agent" },
+        ignore: ["private/**"],
+        watch: ["src/**"],
+        deploy: { target: "x" },
+        labels: { boundary: "Acme" },
+        links: [{ label: "Repo", url: "https://example.com" }],
+      }),
+    );
+    write("README.md", "# Acme\n");
+    write(
+      "stores/evidence.md",
+      `---
+name: Evidence store
+status: live
+kind: database
+code: [db]
+tables:
+  - name: evidence
+    evidence: [db/schema.sql]
+    columns:
+      - { name: code, type: text }
+  - name: code
+    columns: []
+  - name: dev
+    columns: []
+enums:
+  - { name: code, values: [a, b] }
+---
+Holds it.
+`,
+    );
+    write(
+      "services/code.md",
+      "---\nname: Code\nstatus: live\nkind: api\ncode: [apps/code]\n---\nCode service.\n",
+    );
+    const data = JSON.parse(siteData(root, dir, { public: true })) as {
+      config: Record<string, unknown>;
+      model: {
+        tables: Record<string, { columns: { name: string }[] }>;
+        enums: Record<string, unknown>;
+        services: Record<string, unknown>;
+      };
+      docs: Record<string, Record<string, unknown>>;
+    };
+    expect(Object.keys(data.model.tables).sort()).toEqual([
+      "code",
+      "dev",
+      "evidence",
+    ]);
+    expect(data.model.tables.evidence?.columns[0]?.name).toBe("code");
+    expect(data.model.tables.evidence).not.toHaveProperty("evidence");
+    expect(data.model.enums.code).toEqual({ values: ["a", "b"] });
+    expect(data.model.services.code).toBeDefined();
+    expect(data.docs.code?.name).toBe("Code");
+    expect(data.docs.code).not.toHaveProperty("code");
+    expect(data.docs.evidence?.name).toBe("Evidence store");
+    expect(Object.keys(data.config).sort()).toEqual([
+      "labels",
+      "links",
+      "name",
+      "product",
+    ]);
+  });
+
+  it("escapes raw HTML in markdown so it never reaches data.json as a tag", () => {
+    write("archmap.config.json", '{"name":"Acme"}');
+    write("README.md", "# Acme\n\n<script>alert(1)</script>\n");
+    write(
+      "services/api.md",
+      `---
+name: API
+status: live
+kind: api
+---
+Hi <img src=x onerror=alert(1)> there.
+
+<img src=x onerror=alert(1)>
+
+## How it works
+
+<div onclick="x()">block</div>
+
+## For developers
+
+Inline <b onmouseover=alert(1)>bold</b>.
+`,
+    );
+    for (const opts of [{}, { public: true }, { dev: true }]) {
+      const raw = siteData(root, dir, opts);
+      const data = JSON.parse(raw) as {
+        readme: string;
+        docs: Record<string, Record<string, string>>;
+      };
+      const all = JSON.stringify([data.readme, data.docs]);
+      expect(all).not.toMatch(/<img/i);
+      expect(all).not.toMatch(/<script/i);
+      expect(all).not.toMatch(/<div/i);
+      expect(all).not.toMatch(/<b /i);
+      expect(data.docs.api?.summary).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    }
+  });
+
   it("a normal build keeps dev text and code", () => {
     seed();
     const out = join(root, "site");
@@ -299,4 +408,53 @@ describe("site data", () => {
     expect((await get("/secret.txt")).status).toBe(404);
     await new Promise((resolve) => server.close(resolve));
   });
+
+  it("serve rejects with a readable message when the port is in use", async () => {
+    seed();
+    const first = await serve(root, dir, 0);
+    const port = (first.address() as { port: number }).port;
+    try {
+      await expect(serve(root, dir, port)).rejects.toThrow(
+        `Port ${port} is in use. Try --port ${port + 1}.`,
+      );
+    } finally {
+      await new Promise((resolve) => first.close(resolve));
+    }
+  });
 });
+
+describe("viewer: Start here", () => {
+  const app = readFileSync(
+    join(import.meta.dirname, "..", "..", "viewer", "app.js"),
+    "utf8",
+  );
+  const fn = (header: string): string => {
+    const start = app.indexOf(header);
+    expect(start).toBeGreaterThan(-1);
+    return app.slice(start, app.indexOf("\n}", start));
+  };
+
+  // Start here is drawn above the drawer (z-index 8 vs 6), so every drawer,
+  // flow, problems and enum panel, which all open through showPanel, closes it.
+  it("closes whenever a drawer opens", () => {
+    expect(fn("function showPanel(")).toContain("showStart(false)");
+    for (const opener of [
+      "function openFlow(",
+      "function openFlows(",
+      "function openEnums(",
+      "function openProblems(",
+      "function openTable(",
+      "function openService(",
+      "function openPersona(",
+    ])
+      expect(fn(opener)).toContain("showPanel(");
+  });
+
+  it("closes on search navigation", () => {
+    const search = app.slice(app.indexOf('$("q").addEventListener("keydown"'));
+    expect(search.slice(0, search.indexOf("\n});"))).toContain(
+      "showStart(false)",
+    );
+  });
+});
+

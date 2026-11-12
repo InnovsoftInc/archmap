@@ -10,6 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -181,6 +182,28 @@ describe("archmap CLI", () => {
       );
     } finally {
       rmSync(link, { force: true });
+    }
+  });
+
+  it("dev on a port in use says so and exits 1", async () => {
+    expect(run(["init", "--name", "T"]).status).toBe(0);
+    const blocker = createServer();
+    await new Promise<void>((resolve) =>
+      blocker.listen(0, "127.0.0.1", resolve),
+    );
+    const port = (blocker.address() as { port: number }).port;
+    try {
+      const r = spawnSync(process.execPath, [BIN, "dev", "--port", String(port)], {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 10000,
+      });
+      expect(r.status).toBe(1);
+      expect(r.stderr.trim()).toBe(
+        `Port ${port} is in use. Try --port ${port + 1}.`,
+      );
+    } finally {
+      await new Promise((resolve) => blocker.close(resolve));
     }
   });
 });
