@@ -78,21 +78,18 @@ describe("toViewModel", () => {
       doc("services", "web", { name: "Web", status: "live", kind: "app" }),
       doc("services", "cron", { name: "Cron", status: "live", kind: "job" }),
     ]);
-    expect(Object.keys(m.categories)).toEqual([
-      "apps",
-      "services",
-      "data",
-      "outside",
-    ]);
+    // Only lanes with something in them are drawn.
+    expect(Object.keys(m.categories)).toEqual(["frontend", "backend"]);
+    expect(m.categories.backend).toMatchObject({ external: false });
     expect(m.services.api).toMatchObject({
       name: "API",
       status: "live",
-      lane: "services",
+      lane: "backend",
       type: "app",
       purpose: "Handles requests.",
     });
-    expect(m.services.web).toMatchObject({ lane: "apps", type: "app" });
-    expect(m.services.cron).toMatchObject({ lane: "services", type: "job" });
+    expect(m.services.web).toMatchObject({ lane: "frontend", type: "app" });
+    expect(m.services.cron).toMatchObject({ lane: "backend", type: "job" });
     expect(m.services["api.ep-0"]).toEqual({
       parent: "api",
       type: "endpoint",
@@ -160,13 +157,13 @@ describe("toViewModel", () => {
       doc("external", "stripe", { name: "Stripe", status: "live" }),
     ]);
     expect(m.services.db).toMatchObject({
-      lane: "data",
+      lane: "backend",
       type: "store",
       opens: "schema",
     });
     expect(m.services.q?.opens).toBeUndefined();
     expect(m.services.stripe).toMatchObject({
-      lane: "outside",
+      lane: "third_party",
       type: "external",
     });
     expect(m.tables.users).toMatchObject({

@@ -5,6 +5,7 @@ import { emptyModel } from "./core.ts";
 import type { Column, Model, Table } from "./core.ts";
 import type { Doc, Folder, MapConfig } from "./map/types.ts";
 import type { Freshness } from "./versions.ts";
+import { DEFAULT_LANES, laneOf, type Lane } from "./map/lanes.ts";
 
 export type DocView = {
   folder: Folder;
@@ -75,12 +76,17 @@ export type LibInfo = {
 export const toViewModel = (
   docs: Doc[],
   libs: Record<string, LibInfo> = {},
+  lanes: Lane[] = DEFAULT_LANES,
 ): Model => {
   const m = emptyModel();
-  m.categories.apps = { name: "Apps", order: 1 };
-  m.categories.services = { name: "Services", order: 2 };
-  m.categories.data = { name: "Data", order: 3 };
-  m.categories.outside = { name: "Outside", order: 4 };
+  lanes.forEach((l, i) =>
+    Reflect.set(m.categories, l.id, {
+      name: l.name,
+      order: i + 1,
+      purpose: l.purpose,
+      external: l.outside === true,
+    }),
+  );
   const personaIds = new Set(
     docs.filter((d) => d.folder === "personas").map((d) => d.id),
   );
@@ -93,7 +99,7 @@ export const toViewModel = (
       m.services[d.id] = {
         name,
         status,
-        lane: kind === "app" ? "apps" : "services",
+        lane: laneOf(d, lanes),
         type: kind === "job" ? "job" : "app",
         purpose: summaryOf(d),
       };
@@ -128,7 +134,7 @@ export const toViewModel = (
       m.services[d.id] = {
         name,
         status,
-        lane: "data",
+        lane: laneOf(d, lanes),
         type: "store",
         opens: kind === "database" ? "schema" : undefined,
       };
@@ -153,7 +159,12 @@ export const toViewModel = (
       for (const e of list(d.data.enums))
         m.enums[text(e.name) ?? ""] = { values: strings(e.values) };
     } else if (d.folder === "external") {
-      m.services[d.id] = { name, status, lane: "outside", type: "external" };
+      m.services[d.id] = {
+        name,
+        status,
+        lane: laneOf(d, lanes),
+        type: "external",
+      };
     }
     for (const c of list(d.data.connects)) {
       const to = text(c.to) ?? "";
@@ -184,6 +195,10 @@ export const toViewModel = (
         }),
       };
   }
+  // A lane with nothing in it isn't drawn.
+  const used = new Set(Object.values(m.services).map((s) => s.lane));
+  for (const id of Object.keys(m.categories))
+    if (!used.has(id)) Reflect.deleteProperty(m.categories, id);
   return m;
 };
 

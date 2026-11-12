@@ -44,6 +44,7 @@ const SHAPES: Record<Folder, Shape> = {
   services: {
     ...COMMON,
     kind: kind("app", "api", "worker", "job"),
+    lane: opt,
     connects,
     endpoints: { t: "list", item: { route: { t: "route" }, evidence: opt } },
     jobs: { t: "list", item: { name: req, schedule: opt, evidence: opt } },
@@ -55,6 +56,7 @@ const SHAPES: Record<Folder, Shape> = {
   stores: {
     ...COMMON,
     kind: kind("database", "queue", "bucket", "cache"),
+    lane: opt,
     connects,
     tables: {
       t: "list",
@@ -86,6 +88,7 @@ const SHAPES: Record<Folder, Shape> = {
   external: {
     ...COMMON,
     kind: kind("auth", "email", "payments", "ai", "hosting", "other"),
+    lane: opt,
     connects,
   },
   personas: {

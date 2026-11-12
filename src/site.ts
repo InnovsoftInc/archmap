@@ -20,6 +20,7 @@ import {
 import type { DocView, LibInfo } from "./view.ts";
 import { latestVersions } from "./registry.ts";
 import { freshness, libraryVersions } from "./versions.ts";
+import { lanesOf } from "./map/lanes.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIEWER = join(HERE, "..", "viewer");
@@ -121,7 +122,7 @@ export const siteData = (
       code,
     };
   }
-  const model = toViewModel(map.docs, libs);
+  const model = toViewModel(map.docs, libs, lanesOf(map.config));
   const body = {
     config: {
       ...(opts.public ? publicConfig(map.config) : map.config),

@@ -33,6 +33,8 @@ export type MapConfig = {
   ignore?: string[];
   watch?: string[];
   deploy?: Record<string, unknown>;
+  /** The overview's lanes, replacing the defaults (see map/lanes.ts). */
+  lanes?: unknown;
   product?: string;
   logo?: string;
   theme?: { light?: Record<string, string>; dark?: Record<string, string> };

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { gateProblems } from "./gate.ts";
 import { loadMap } from "./map/load.ts";
 import { schemaProblems } from "./map/schema.ts";
+import { laneProblems } from "./map/lanes.ts";
 import { evidenceProblems, plannedWithEvidence } from "./map/evidence.ts";
 import { findSecrets } from "./map/secrets.ts";
 import { unconfirmedLeads } from "./map/leads.ts";
@@ -56,6 +57,7 @@ export const runCheck = (
     ...schemaProblems(map.docs, map.failedIds),
     ...evidenceProblems(root, map.docs),
     ...secretProblems(map),
+    ...laneProblems(map.config, map.docs),
     ...(opts.base ? gateProblems(root, dir, opts.base) : []),
   ];
   if (!map.docs.length && existsSync(join(dir, "saves")))

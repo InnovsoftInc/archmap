@@ -27,6 +27,8 @@ facts the diagrams need:
 | `personas` | `roles` (the auth roles that map to it: `name`, `evidence`), `needs`                                                                                                                                               |
 | `flows`    | `persona`, `steps` (each `{ by, at, does }`, where `by` is a persona or service id and `at` is a service, store or external id)                                                                                    |
 
+The overview groups services, stores and external files into lanes, placed from what they already say: `kind: app` goes to Frontend; APIs, workers, jobs and stores to Backend; external `kind: hosting` to Platform and delivery; other external services to Third-party and partners, or to Legacy when `status: retiring`. Don't add `lane` unless a file belongs somewhere else; then use one of the lane ids in `archmap.config.json` (`frontend`, `backend`, `platform`, `third_party`, `legacy` by default).
+
 A column is `{ name, type, pk, unique, fk, enum, desc, evidence }`; a column's
 `enum` names an enum in the same store. `connects[].to` is the id of a service,
 store or external. A `connects` entry's `status` (`live`, `planned` or

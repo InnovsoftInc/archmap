@@ -41,6 +41,18 @@ architecture/
 
 The file name is the id. Frontmatter holds the facts the diagrams need (kind, status, connections, endpoints, tables) and each carries `evidence`: a file path, optionally with `#Symbol` (a whole identifier of at least 3 characters). The body explains in plain language: a summary, then `## How it works`, then `## For developers`. The map describes the current state; history is `git log architecture/`.
 
+The overview follows the C4 model's container view: the project's boundary holds **Frontend** (what people use), **Backend** (APIs, workers, jobs and the data they keep) and **Platform and delivery** (hosting, CI/CD, secrets, monitoring); outside it sit **Third-party and partners** and **Legacy** (systems being replaced). Each file is placed from its folder, kind and status, so agents don't choose; a file can set `lane` to go elsewhere, and a project can replace the lanes in `archmap.config.json`:
+
+```json
+"lanes": [
+  { "id": "frontend", "name": "Portals", "purpose": "What applicants and staff use." },
+  { "id": "backend", "name": "Backend" },
+  { "id": "third_party", "name": "Partners", "outside": true }
+]
+```
+
+A file whose default lane isn't in the list goes to the first lane on the same side of the boundary. Lanes with nothing in them aren't drawn. Opening a service shows its parts as C4 components: Endpoints, Jobs and Libraries, each library with the version its manifest declares and, from `dev` and `build`, how far behind the latest release it is.
+
 `check` warns about leads: things `scan` found in the code that the map doesn't cover. Each has a key, `scan:<kind>:<name>@<file>` (for example `scan:route:GET /api/v1/healthcheck@apps/api/src/routes/healthcheck.ts`). To drop a lead that isn't architecture, add its key to `ignore` in `archmap.config.json`. An entry is split at its last `@`: in the name part `*` matches any characters (`/` included), and the file part is a glob, so `scan:route:*@apps/api/**` drops every route in `apps/api` and `scan:infra:*@infra/modules/**` every infrastructure lead there. An entry without `@<file>` matches the lead in every file.
 
 ## Commands
