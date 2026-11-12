@@ -16,7 +16,6 @@ import { schemaReader } from "../scan/schema.ts";
 import { infraReader } from "../scan/infra.ts";
 import { outsideReader } from "../scan/outside.ts";
 import { ciReader } from "../scan/ci.ts";
-import { proposeWatch, stage } from "../scan/propose.ts";
 
 const fixture = (name: string) =>
   join(import.meta.dirname, "fixtures", "scan", name);
@@ -483,106 +482,5 @@ describe("scan", () => {
 
   it("gives the same result every time", () => {
     expect(scan(fastify)).toEqual(scan(fastify));
-  });
-});
-
-describe("stage", () => {
-  it("is planning for an empty repo", () => {
-    expect(stage(scan(fixture("empty")))).toBe("planning");
-  });
-
-  it("is scaffolded for a few routes and nothing else", () => {
-    mkdirSync(join(tmp, "src", "routes"), { recursive: true });
-    writeFileSync(
-      join(tmp, "src", "routes", "users.ts"),
-      'router.get("/users", h);\nrouter.post("/users", h);\n',
-    );
-    const s = scan(tmp);
-    expect(s.routes).toHaveLength(2);
-    expect(stage(s)).toBe("scaffolded");
-  });
-
-  it("is not planning for code with no package.json, routes or infrastructure", () => {
-    const s = scan(fixture("go-only"));
-    expect(s.apps).toEqual([]);
-    expect(s.codeFiles).toBe(1);
-    expect(stage(s)).toBe("scaffolded");
-  });
-
-  it("is not planning for a src/ folder alone", () => {
-    mkdirSync(join(tmp, "src"));
-    writeFileSync(join(tmp, "src", "notes.txt"), "");
-    expect(stage(scan(tmp))).toBe("scaffolded");
-  });
-
-  it("is existing once there is a schema", () => {
-    expect(stage(scan(express))).toBe("existing");
-  });
-});
-
-describe("proposeWatch", () => {
-  it("proposes route folders and schema files", () => {
-    const watch = proposeWatch(scan(express));
-    expect(watch).toContainEqual({
-      paths: ["src/routes/**", "src/server.ts"],
-      means: "API endpoints",
-      layer: "parts",
-    });
-    expect(watch).toContainEqual({
-      paths: ["prisma/schema.prisma"],
-      means: "Database tables and columns",
-      layer: "data",
-    });
-  });
-
-  it("proposes terraform, compose, libraries and env files", () => {
-    const names = proposeWatch(scan(fastify)).map((e) => e.means);
-    expect(names).toContain("Hosting and cloud services");
-    expect(names).toContain("Libraries and tools");
-    const c = proposeWatch(scan(compose));
-    expect(c).toContainEqual({
-      paths: ["docker-compose.yml"],
-      means: "Services and containers",
-      layer: "overview",
-    });
-    expect(c.find((e) => e.means === "Outside services")?.paths).toContain(
-      "app.env.example",
-    );
-  });
-
-  it("watches Next.js route files and migration folders, not loose SQL", () => {
-    write(
-      "apps/server/src/app/api/trips/route.ts",
-      "export function GET() {}\n",
-    );
-    write("db/migrations/0001_a.sql", "CREATE TABLE tags (id int);\n");
-    write("scripts/audit.sql", "SELECT 1;\n");
-    const watch = proposeWatch(scan(tmp));
-    expect(watch).toContainEqual({
-      paths: ["apps/server/src/app/**/route.ts"],
-      means: "API endpoints",
-      layer: "parts",
-    });
-    expect(watch).toContainEqual({
-      paths: ["db/migrations/**"],
-      means: "Database tables and columns",
-      layer: "data",
-    });
-  });
-
-  it("leaves out the root app's package.json", () => {
-    writeFileSync(
-      join(tmp, "package.json"),
-      JSON.stringify({ name: "root", dependencies: { express: "1" } }),
-    );
-    const s = scan(tmp);
-    expect(s.apps.some((a) => a.path === ".")).toBe(true);
-    expect(
-      proposeWatch(s).find((e) => e.means === "Libraries and tools"),
-    ).toBeUndefined();
-  });
-
-  it("leaves out kinds with nothing found", () => {
-    expect(proposeWatch(scan(fixture("empty")))).toEqual([]);
   });
 });

@@ -1,23 +1,21 @@
 #!/usr/bin/env node
-// archmap: an architecture map kept as files in the project's repo.
+// archmap: an architecture map kept as markdown files in the project's repo.
 
-import { parseArgs } from "node:util";
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  check,
-  init,
-  newSave,
-  publish,
-  resolveDir,
-  scanCommand,
-  snapshot,
-  type Result,
-} from "./commands.ts";
-import { connectClaude } from "./claude.ts";
-import { driftCommand } from "./drift.ts";
-import { install } from "./install.ts";
-import { upgradeInfo } from "./upgrade.ts";
+import { parseArgs } from "node:util";
+import { runAgent } from "./agent.ts";
+import { brief, type Task } from "./brief.ts";
+import { formatCheck, runCheck } from "./check.ts";
+import { repoRoot } from "./git.ts";
+import { init } from "./init.ts";
+import { loadMap } from "./map/load.ts";
+import { leadsOf } from "./map/leads.ts";
+import type { Result } from "./map/types.ts";
+import { migrate } from "./migrate.ts";
+import { scan } from "./scan/index.ts";
 import { build, serve } from "./site.ts";
+import { versionWarning } from "./version.ts";
 
 // The viewer build uses Node's type stripping (stripTypeScriptTypes), which is
 // still flagged experimental; keep its warning out of the CLI's output.
@@ -26,122 +24,121 @@ process.on("warning", (w) => {
   if (w.name !== "ExperimentalWarning") console.warn(w.message);
 });
 
-const HELP = `archmap: an architecture map kept as files in your repo.
+const HELP = `archmap: an architecture map kept as markdown files in your repo.
 
 Usage: archmap <command> [options]
 
-  install                        Copy archmap into .archmap/ and set up Claude Code (run through npx)
-  upgrade [version]              Find a newer release and name the command to reinstall
-  claude                         Connect Claude Code to .archmap/ for you (local scope, not committed)
-  init [--name "Project"] [--no-skill]
-                                 Create architecture/ and the Claude skill
-                                 (--no-skill if the plugin provides it)
+  init [--name "Project"] [--ci github|azure]
+                                 Create architecture/, the AGENTS.md section and,
+                                 with --ci, the PR workflow
+  scan [--json]                  List what the repo contains (leads for the map)
+  check [--json] [--strict] [--base <ref>]
+                                 Validate the map; with --base, run the map gate
+                                 (use in CI)
+  brief [--task setup|update|review|hosting] [--base <ref>]
+                                 Print the task for an AI agent to follow
+  agent [--task ...] [--base <ref>]
+                                 Run the configured agent (agent.command) on the brief
   dev [--port 4321]              View the map locally; reloads on file changes
-  build [--out archmap-site]     Write the map as a static site
-  check                          Validate every save and version (use in CI)
-  save --summary "..."           Start a new save file for Claude or you to fill
-  publish "Sprint 2" [--summary]  Turn the draft into a version
-  snapshot                       Write architecture/current.json (latest state)
-  scan [--watch]                 List what the repo contains (routes, tables,
-                                 services) as JSON; --watch proposes a watch list
-                                 (run it from the project root: the paths are
-                                 relative to it, as drift reads them)
-  drift [--base <ref>] [--json] [--strict]
-                                 List watched files changed on this branch with
-                                 no new save; exits 0 unless --strict
+  build [--out archmap-site] [--public]
+                                 Write the map as a static site
+  migrate                        Turn an old saves ledger into map files
 
 Options: --dir <folder> (default: architecture)
 `;
+
+const TASKS: Task[] = ["setup", "update", "review", "hosting"];
 
 const print = (r: Result): void => {
   r.lines.forEach((l) => (r.ok ? console.log(l) : console.error(l)));
   if (!r.ok) process.exitCode = 1;
 };
 
+const real = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+/** The repository root (symlinks resolved), or the working folder outside one. */
+const projectRoot = (): string =>
+  real(repoRoot(process.cwd()) ?? process.cwd());
+
 const main = async (argv: string[]): Promise<void> => {
   const { positionals, values } = parseArgs({
     args: argv,
     allowPositionals: true,
-    allowNegative: true,
     options: {
       dir: { type: "string" },
       name: { type: "string" },
+      ci: { type: "string" },
       out: { type: "string" },
       port: { type: "string" },
-      summary: { type: "string" },
-      author: { type: "string" },
-      skill: { type: "boolean", default: true },
-      watch: { type: "boolean" },
+      task: { type: "string" },
       base: { type: "string" },
       json: { type: "boolean" },
       strict: { type: "boolean" },
+      public: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
-  const [cmd, arg] = positionals;
-  const dir = resolveDir(values.dir);
+  const [cmd] = positionals;
   if (!cmd || values.help) return void console.log(HELP);
+
+  const cwd = process.cwd();
+  const dirArg = values.dir ?? "architecture";
+  const dir = resolve(cwd, dirArg);
+  const task = values.task as Task | undefined;
+  if (task && !TASKS.includes(task))
+    throw new Error(`--task must be one of ${TASKS.join(", ")}, not "${task}"`);
+
   switch (cmd) {
-    case "init":
-      return print(
-        init(values.dir || "architecture", {
-          name: values.name,
-          skill: values.skill,
-        }),
-      );
-    case "install":
-      return print(install(process.cwd()));
-    case "upgrade":
-      return print(upgradeInfo(process.cwd(), { want: arg }));
-    case "claude":
-      return print(connectClaude(process.cwd()));
+    case "init": {
+      const ci = values.ci;
+      if (ci !== undefined && ci !== "github" && ci !== "azure")
+        throw new Error(`--ci must be github or azure, not "${ci}"`);
+      return print(init(real(cwd), { dir: dirArg, name: values.name, ci }));
+    }
+    case "scan": {
+      const leads = leadsOf(scan(projectRoot()));
+      if (values.json) console.log(JSON.stringify(leads, null, 2));
+      else leads.forEach((l) => console.log(`${l.key}  ${l.file}`));
+      return;
+    }
+  }
+
+  const warning = versionWarning(loadMap(dir).config);
+  if (warning) console.error(warning);
+  const root = projectRoot();
+
+  switch (cmd) {
     case "check":
-      return print(check(dir));
-    case "scan":
-      return print(scanCommand(process.cwd(), { watch: values.watch }));
-    case "drift":
       return print(
-        driftCommand(dir, {
-          base: values.base,
-          json: values.json,
+        formatCheck(runCheck(root, dir, { base: values.base }), {
           strict: values.strict,
+          json: values.json,
         }),
       );
-    case "snapshot":
-      return print(snapshot(dir));
-    case "save":
-      if (!values.summary)
-        return print({
-          ok: false,
-          lines: [
-            'Give the save a summary: archmap save --summary "Add hour type"',
-          ],
-        });
-      return print(
-        newSave(dir, { summary: values.summary, author: values.author }),
-      );
-    case "publish":
-      if (!arg)
-        return print({
-          ok: false,
-          lines: ['Name the version: archmap publish "Sprint 2"'],
-        });
-      return print(publish(dir, arg, { summary: values.summary }));
+    case "brief":
+      return void console.log(brief(root, dir, { task, base: values.base }));
+    case "agent":
+      return print(runAgent(root, dir, { task, base: values.base }));
+    case "migrate":
+      return print(migrate(root, dir));
     case "build":
       return print({
         ok: true,
-        lines: build(
-          process.cwd(),
-          dir,
-          resolve(values.out || "archmap-site"),
-          {},
-        ),
+        lines: build(root, dir, resolve(cwd, values.out || "archmap-site"), {
+          public: values.public,
+        }),
       });
     case "dev": {
       const port = Number(values.port || 4321);
-      await serve(process.cwd(), dir, port);
+      await serve(root, dir, port);
       console.log(
-        `Architecture map at http://127.0.0.1:${port}/ (reloads when files in ${dir} change). Ctrl+C to stop.`,
+        `Architecture map at http://127.0.0.1:${port}/ (reloads when files in ${dirArg} change). Ctrl+C to stop.`,
       );
       return;
     }

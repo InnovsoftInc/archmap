@@ -1,7 +1,7 @@
 {
   "name": "@tttstudios/archmap",
   "version": "0.4.0",
-  "description": "An architecture map kept as files in your repo: categories, services, connections, database tables, personas and flows, versioned by sprint, viewable as a static site and updated by Claude.",
+  "description": "An architecture map kept as markdown files in your repo, written and kept current by any AI agent, checked against the code with no AI, and viewable as a static site.",
   "type": "module",
   "bin": {
     "archmap": "./bin/archmap.mjs"
@@ -11,8 +11,6 @@
     "src",
     "viewer",
     "templates",
-    "plugin",
-    ".claude-plugin",
     "!src/__tests__"
   ],
   "engines": {

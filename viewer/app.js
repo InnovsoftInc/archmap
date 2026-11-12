@@ -681,15 +681,15 @@ var cardEls = {},
   zoneEls = [],
   edgeEls = [],
   DEF = {};
-// Empty layers say so and name the Claude command that fills them (copy from the Task 13 brief).
+// Empty layers say so and name the command that fills them.
 var EMPTY = {
   overview:
-    "Nothing on the map yet. In Claude Code, run <code>/archmap:setup</code> to draft it from your code or a short interview.",
-  data: "No tables recorded yet. Run <code>/archmap:setup data</code> in Claude Code.",
+    "Nothing on the map yet. Ask your AI agent to run <code>archmap brief --task setup</code> and follow it to draft the map from your code.",
+  data: "No tables recorded yet. Ask your AI agent to run <code>archmap brief</code> and follow it.",
   flows:
-    "No flows recorded yet. Run <code>/archmap:setup people</code> in Claude Code.",
+    "No flows recorded yet. Ask your AI agent to run <code>archmap brief</code> and follow it.",
   personas:
-    "No personas recorded yet. Run <code>/archmap:setup people</code> in Claude Code.",
+    "No personas recorded yet. Ask your AI agent to run <code>archmap brief</code> and follow it.",
 };
 function emptyState(key, cls) {
   return (

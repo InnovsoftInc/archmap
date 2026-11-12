@@ -23,7 +23,6 @@ import {
   type Save,
   type Version,
 } from "./core.ts";
-import type { WatchEntry } from "./watch.ts";
 
 export type Config = {
   name: string;
@@ -38,7 +37,7 @@ export type Config = {
     outsideSub?: string;
   };
   links?: { label: string; url: string }[];
-  watch?: WatchEntry[];
+  watch?: { paths: string[]; means: string; layer: string }[];
 };
 
 export type Project = {
