@@ -156,6 +156,7 @@ describe("toViewModel", () => {
     });
     expect(m.tables.jobs?.area).toBe("db");
     expect(m.areas.People).toEqual({ name: "People", order: 1 });
+    expect(m.areas.db).toEqual({ name: "DB", order: 2 });
     expect(m.enums.role).toEqual({ values: ["a", "b"] });
   });
 

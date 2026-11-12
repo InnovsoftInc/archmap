@@ -123,9 +123,13 @@ export const toViewModel = (docs: Doc[]): Model => {
           columns: list(t.columns).map(column),
         };
         Reflect.set(m.tables, tableName, table);
-        if (group && !Reflect.has(m.areas, group)) {
+        const areaId = group ?? d.id;
+        if (!Reflect.has(m.areas, areaId)) {
           areaOrder += 1;
-          Reflect.set(m.areas, group, { name: group, order: areaOrder });
+          Reflect.set(m.areas, areaId, {
+            name: group ?? name,
+            order: areaOrder,
+          });
         }
       }
       for (const e of list(d.data.enums))
