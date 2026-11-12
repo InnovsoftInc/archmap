@@ -62,7 +62,7 @@ All of them take `--dir <folder>` (default `architecture`). Every command except
 
 ## CI
 
-`init` records the branch pull requests target as `base` in the config (`--base <branch>`, else the branch `origin/HEAD` names, else `main`), adding it to an existing config that has none; the `AGENTS.md` section and the update brief use it. `init --ci github` (or `azure`) writes two jobs for pull requests:
+`init` records the branch pull requests target as `base` in the config (`--base <branch>`, else the branch `origin/HEAD` names, else `main`), adding it to an existing config that has none; the `AGENTS.md` section and the update brief use it. Wherever a base is compared with, a branch that exists only as `origin/<branch>` is used from there. `init --ci github` (or `azure`) writes two jobs for pull requests:
 
 1. `check` (required, no AI) runs `archmap check --base origin/<base branch>`. It fails when the PR changes the architecture but neither the map nor an `Archmap: none - <reason>` commit trailer records it.
 2. `map` (not required) runs `archmap agent --base origin/<base branch>` with the AI key from a CI secret and pushes the map edit to the PR branch, so reviewers see it next to the code. It never blocks a merge.

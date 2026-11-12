@@ -38,6 +38,15 @@ const resolves = (root: string, ref: string): boolean => {
   }
 };
 
+/**
+ * The ref to compare with: `base` itself, or `origin/<base>` when only the
+ * remote branch exists (a CI checkout often has no local branch).
+ */
+export const resolveBase = (root: string, base: string): string =>
+  !resolves(root, base) && resolves(root, `origin/${base}`)
+    ? `origin/${base}`
+    : base;
+
 /** The branch pull requests target when the config names none: the one origin/HEAD names, else main. */
 export const defaultBase = (root: string): string => {
   try {
@@ -53,12 +62,13 @@ export const defaultBase = (root: string): string => {
 };
 
 /** Files changed since `base`: committed (base...HEAD), staged, unstaged and untracked, relative to `root`. */
-export const changedFiles = (root: string, base: string): string[] => {
+export const changedFiles = (root: string, name: string): string[] => {
   const fail = (detail: string, cause?: unknown): never => {
-    throw new Error(`Can't compare with ${base}: ${detail}`, { cause });
+    throw new Error(`Can't compare with ${name}: ${detail}`, { cause });
   };
   if (repoRoot(root) === null)
     return fail("not a git repository (or git isn't installed)");
+  const base = resolveBase(root, name);
   if (!resolves(root, base)) {
     const guess = ["origin/HEAD", "origin/main", "main", "master"].find((r) =>
       resolves(root, r),

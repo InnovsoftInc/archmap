@@ -131,6 +131,17 @@ describe("map gate", () => {
     });
   });
 
+  it("uses origin/<base> when only the remote branch exists", () => {
+    git("update-ref", "refs/remotes/origin/dev", "HEAD");
+    write("apps/api/src/routes.ts", "// changed\n");
+    expect(problem("dev")).toContain(
+      "apps/api/src/routes.ts: evidence of services/api.md",
+    );
+    expect(problem("dev")).toContain("brief --base dev");
+    commit("tweak\n\nArchmap: none - only a comment");
+    expect(runCheck(root, dir(), { base: "dev" }).errors).toEqual([]);
+  });
+
   it("counts a lead that moved to another changed file as new", () => {
     const route =
       'import express from "express";\nconst app = express();\napp.post("/orders", h);\n';

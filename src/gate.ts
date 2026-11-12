@@ -15,6 +15,7 @@ import {
   commitsSince,
   fileAt,
   filesAt,
+  resolveBase,
   uncommittedFiles,
 } from "./git.ts";
 import { evidenceOf } from "./map/evidence.ts";
@@ -128,8 +129,9 @@ const newLeadsByFile = (
 export const architecturalFiles = (
   root: string,
   dir: string,
-  base: string,
+  name: string,
 ): GateHit[] => {
+  const base = resolveBase(root, name);
   const map = loadMap(dir);
   const prefix = mapPrefix(root, dir);
   const skip = map.config.agent?.skip ?? [];
@@ -199,7 +201,8 @@ export const gateProblems = (
 ): Finding[] => {
   const hits = architecturalFiles(root, dir, base);
   if (!hits.length) return [];
-  if (covered(root, mapPrefix(root, dir), base, hits)) return [];
+  if (covered(root, mapPrefix(root, dir), resolveBase(root, base), hits))
+    return [];
   const map = loadMap(dir);
   const shown = hits.slice(0, 5).map((h) => `  ${h.file}: ${h.why}`);
   if (hits.length > 5) shown.push(`  …and ${hits.length - 5} more`);

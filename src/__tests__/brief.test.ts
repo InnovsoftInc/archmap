@@ -140,6 +140,18 @@ describe("brief", () => {
     );
   });
 
+  it("uses origin/<base> when only the remote branch exists", () => {
+    write("apps/api/src/a.ts", "a\n");
+    api("endpoints:\n  - route: GET /a\n    evidence: apps/api/src/a.ts\n");
+    initRepo();
+    git("update-ref", "refs/remotes/origin/dev", "HEAD");
+    write("apps/api/src/a.ts", "a2\n");
+    const out = brief(root, dir(), { task: "update", base: "dev" });
+    expect(out).toContain("## What changed since dev");
+    expect(out).toContain("- apps/api/src/a.ts");
+    expect(out).toContain("apps/api/src/a.ts: evidence of services/api.md");
+  });
+
   it("includes the gate's finding in the check results with --base", () => {
     write("apps/api/src/a.ts", "a\n");
     api("endpoints:\n  - route: GET /a\n    evidence: apps/api/src/a.ts\n");
