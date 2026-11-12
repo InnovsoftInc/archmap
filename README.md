@@ -1,68 +1,77 @@
 # archmap
 
-An architecture map kept as files in your repo. It covers categories, services and their parts, connections, database tables and columns, enums, personas and flows. Every change is a reviewed save, versions are published per sprint, and the map is viewable as a static site. Claude keeps it up to date.
+An architecture map kept as markdown files in your repo. Anyone can open it and understand how the project fits together and what exists in it today: new developers, PMs, designers and QA, clients and stakeholders, and AI agents.
+
+An AI agent explores the repo and its connections, decides what belongs on the map and writes it. archmap's CLI uses no AI: it validates the map and checks that each fact's evidence still points at real files. Any agent works (Claude Code, Codex, Cursor, Copilot and others); the package ships no LLM client and no plugin.
 
 Nothing in the package is specific to one project. Each project brands its own map with `archmap.config.json`.
 
 ## Quick start
 
-Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.3.0` (see the repo's tags, or run `node .archmap/bin/archmap.mjs upgrade` once you have a copy):
+Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.4.0`:
 
 ```bash
-npx -y github:InnovsoftInc/archmap#v0.3.0 install
+npx -y github:InnovsoftInc/archmap#v0.4.0 init
 ```
 
-`InnovsoftInc/archmap` is `HOME_REPO` in `src/home.ts`, and changes when the repo moves to tttstudios. The command copies archmap into `.archmap/`, marks that folder as vendored in `.gitattributes`, adds a pointer to the map to `AGENTS.md` (creating it if needed), and connects Claude Code for you. From then on everything runs from that copy; nothing is installed from a package registry.
+`InnovsoftInc/archmap` is `HOME_REPO` in `src/home.ts`, and changes when the repo moves to tttstudios. `init` creates `architecture/` with `archmap.config.json` (pinned to this version) and a starter `README.md`, and adds an archmap section to `AGENTS.md` (plus `@AGENTS.md` in an existing `CLAUDE.md`). Add `--ci github` or `--ci azure` to write the PR workflow too.
 
-Then ask Claude to run `/archmap:setup`. It creates `architecture/` with a starter save, adds the `archmap` scripts to `package.json` (when there is one), and fills the map from your code or a short interview.
+Then ask your agent to run `brief` and follow it:
 
-Once setup has run, view the map with `pnpm archmap:dev` or `node .archmap/bin/archmap.mjs dev` (http://127.0.0.1:4321, reloads when files change), and write a static site with `node .archmap/bin/archmap.mjs build`.
+```bash
+npx -y github:InnovsoftInc/archmap#v0.4.0 brief
+```
 
-### Teammates
+On an empty map the brief is the setup task: discover everything in the code, write the map files, then run `check` until it passes. Nothing is installed or vendored. Projects run archmap through `npx` at the version pinned in `archmap.config.json`, and commit only `architecture/`. To upgrade, change the pinned version.
 
-After cloning, run `pnpm archmap:claude` (or `node .archmap/bin/archmap.mjs claude`) once. It connects Claude Code to `.archmap/` for you only, at local scope, and commits nothing. Claude Code keeps one `archmap` marketplace per machine, so if another project already connected its `.archmap/`, this project's `/archmap` commands come from that copy; each project still runs its own `.archmap/bin/archmap.mjs`, and an older copy is caught by the version check.
-
-### Upgrading
-
-Ask Claude to run `/archmap:upgrade`, or run `node .archmap/bin/archmap.mjs upgrade [version]`. It compares `.archmap/VERSION` with the releases of the home repo and prints the install command for the newer one.
-
-## Commands
-
-Run them as `node .archmap/bin/archmap.mjs <command>` (the `archmap` scripts in `package.json` do the same).
-
-| Command                                  | What it does                                                                |
-| ---------------------------------------- | --------------------------------------------------------------------------- |
-| `archmap install`                        | Copies archmap into `.archmap/` and sets up Claude Code (run through `npx`) |
-| `archmap upgrade [version]`              | Finds a newer release and prints the command to reinstall                   |
-| `archmap claude`                         | Connects Claude Code to `.archmap/` for you (local scope, not committed)    |
-| `archmap init [--name]`                  | Creates `architecture/` and the Claude skill                                |
-| `archmap dev [--port]`                   | Serves the map locally and picks up file changes                            |
-| `archmap build [--out archmap-site]`     | Writes the map as a static site for any static host                         |
-| `archmap check`                          | Validates every save and version; exits 1 on problems (run it in CI)        |
-| `archmap save --summary "..."`           | Starts a correctly named save file                                          |
-| `archmap publish "Sprint 2" [--summary]` | Turns the draft into a version                                              |
-| `archmap snapshot`                       | Writes `current.json`, the latest state, for reading                        |
-| `archmap scan [--watch]`                 | Lists what the repo contains as JSON; `--watch` proposes a watch list       |
-| `archmap drift [--base <ref>]`           | Lists watched files changed on this branch with no new save                 |
-
-All of them take `--dir <folder>` (default `architecture`).
-
-## The architecture folder
+## The map folder
 
 ```
 architecture/
-  archmap.config.json   name, logo, theme, labels, links
-  instructions.md       how to record a change (shown in the viewer and used by the Claude skill)
-  versions.json         published versions; saves in none of them form the draft
-  saves/<id>.json       one save each: { at, author, summary, ops: [{ kind, id, op, value, reason }] }
-  current.json          generated by `archmap snapshot`
+  archmap.config.json   name, branding, pinned archmap version, agent, ignore list
+  README.md             start here: what the product is, who it's for, a short tour
+  services/<id>.md      apps, APIs, workers, scheduled jobs
+  stores/<id>.md        databases, queues, buckets, with tables, columns and enums
+  external/<id>.md      outside services: sign-in, email, payments, AI, hosting
+  personas/<id>.md      each kind of user and what they need
+  flows/<id>.md         the main journeys: who does what, in which service
 ```
 
-Saves are never edited after they're merged. A mistake is fixed by a new save. The kinds, ids and fields are listed in `templates/instructions.md`.
+The file name is the id. Frontmatter holds the facts the diagrams need (kind, status, connections, endpoints, tables) and each carries `evidence`: a file path, optionally with `#Symbol`. The body explains in plain language: a summary, then `## How it works`, then `## For developers`. The map describes the current state; history is `git log architecture/`.
+
+## Commands
+
+Run them as `npx -y github:InnovsoftInc/archmap#v0.4.0 <command>`, written `archmap` below.
+
+| Command                                                                | What it does                                                                    |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `archmap init [--name] [--ci github\|azure]`                           | Creates `architecture/`, the `AGENTS.md` section and, with `--ci`, the workflow |
+| `archmap scan [--json]`                                                | Lists leads from the code: `<key>  <file>` per line, or JSON                    |
+| `archmap check [--json] [--strict] [--base <ref>]`                     | Validates the map and its evidence; with `--base`, the map gate (run it in CI)  |
+| `archmap brief [--task setup\|update\|review\|hosting] [--base <ref>]` | Prints the task for an agent to follow                                          |
+| `archmap agent [--task ...] [--base <ref>]`                            | Runs `agent.command` from the config on the brief                               |
+| `archmap dev [--port 4321]`                                            | Serves the map locally and picks up file changes                                |
+| `archmap build [--out archmap-site] [--public]`                        | Writes the map as a static site for any static host                             |
+| `archmap migrate`                                                      | Turns an old `saves/` ledger into map files                                     |
+
+All of them take `--dir <folder>` (default `architecture`). Every command except `init` and `scan` warns on stderr when `archmap.config.json` pins a different version than the one running. Errors print their message and exit 1.
+
+## CI
+
+`init --ci github` (or `azure`) writes two jobs for pull requests:
+
+1. `check` (required, no AI) runs `archmap check --base origin/<base branch>`. It fails when the PR changes the architecture but neither the map nor an `Archmap: none - <reason>` commit trailer records it.
+2. `map` (not required) runs `archmap agent --base origin/<base branch>` with the AI key from a CI secret and pushes the map edit to the PR branch, so reviewers see it next to the code. It never blocks a merge.
+
+Other CI systems run the same two commands.
+
+## Moving from saves
+
+Projects on archmap 0.3 or earlier keep a `saves/` ledger. Run `archmap migrate` once: it replays the ledger and writes the markdown files, carrying over ids, names, statuses, connections, endpoints, tables, columns, enums, personas and flows. Then run `archmap brief --task review` with your agent to add evidence and write the explanations, and delete `saves/`, `versions.json`, `current.json` and `instructions.md`.
 
 ## White-labelling
 
-`archmap.config.json`:
+`architecture/archmap.config.json`:
 
 ```json
 {
@@ -86,6 +95,6 @@ Any CSS custom property the viewer uses can be overridden under `theme.light` an
 
 ## How it works
 
-- `src/core.ts` holds the model: replaying saves, versions, and the checks. The CLI imports it directly. `build` and `dev` strip its types and serve it to the browser as `core.js`, so the viewer and the CLI share one implementation.
-- The viewer (`viewer/`) is plain HTML, CSS and JavaScript with no framework and no build step. It reads `data.json`.
-- The CLI runs on Node 24 straight from the TypeScript source, with no build step.
+- The map is parsed from the markdown files (frontmatter with a YAML parser, bodies with `marked`). `check` validates it against each kind's schema and looks every evidence path up in the repo.
+- `build` and `dev` write the viewer (`viewer/`), plain HTML, CSS and JavaScript with no framework and no build step, reading a generated `data.json`.
+- The CLI runs on Node 24 straight from the TypeScript source, with no build step. `bin/archmap.mjs` strips the types itself because Node won't do it for files under `node_modules`, where `npx` runs the package from.
