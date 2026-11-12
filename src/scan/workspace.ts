@@ -33,6 +33,9 @@ const patterns = (root: string, manifest: Manifest): string[] => {
   return found;
 };
 
+export const readsApps = (f: string): boolean =>
+  baseName(f) === "package.json" || f === "pnpm-workspace.yaml";
+
 export const appsReader: Reader = (root, files) => {
   const apps: Scan["apps"] = [];
   const dirOf = (file: string) => path.posix.dirname(file);

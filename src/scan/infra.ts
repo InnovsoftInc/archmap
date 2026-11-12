@@ -7,6 +7,9 @@ const isCompose = (f: string) =>
 const isDockerfile = (f: string) =>
   baseName(f) === "Dockerfile" || baseName(f).startsWith("Dockerfile.");
 
+export const readsInfra = (f: string): boolean =>
+  f.endsWith(".tf") || isCompose(f) || isDockerfile(f);
+
 // The keys one level under a top-level `services:` line.
 const composeServices = (text: string): string[] => {
   const names: string[] = [];
@@ -34,7 +37,7 @@ export const infraReader: Reader = (root, files) => {
   const unreadable = readEach(
     root,
     files,
-    (f) => f.endsWith(".tf") || isCompose(f) || isDockerfile(f),
+    readsInfra,
     (file, text) => {
       if (file.endsWith(".tf")) {
         for (const m of text.matchAll(

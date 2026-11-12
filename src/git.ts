@@ -38,6 +38,20 @@ const resolves = (root: string, ref: string): boolean => {
   }
 };
 
+/** The branch pull requests target when the config names none: the one origin/HEAD names, else main. */
+export const defaultBase = (root: string): string => {
+  try {
+    const ref = execFileSync(
+      "git",
+      ["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"],
+      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+    return ref.replace(/^origin\//, "") || "main";
+  } catch {
+    return "main";
+  }
+};
+
 /** Files changed since `base`: committed (base...HEAD), staged, unstaged and untracked, relative to `root`. */
 export const changedFiles = (root: string, base: string): string[] => {
   const fail = (detail: string, cause?: unknown): never => {
@@ -121,6 +135,40 @@ export const fileAt = (
   } catch {
     return null;
   }
+};
+
+/**
+ * The files under `root` at `ref` that `keep` accepts, with their contents, read
+ * in one `git cat-file --batch` call. Paths are relative to `root`.
+ */
+export const filesAt = (
+  root: string,
+  ref: string,
+  keep: (path: string) => boolean,
+): Map<string, Buffer> => {
+  const out = new Map<string, Buffer>();
+  const paths = git(root, ["ls-tree", "-r", "-z", "--name-only", ref])
+    .split("\0")
+    .filter((p) => p && !p.includes("\n") && keep(p));
+  if (!paths.length) return out;
+  const batch = execFileSync("git", ["cat-file", "--batch"], {
+    cwd: root,
+    input: paths.map((p) => `${ref}:./${p}\n`).join(""),
+    stdio: ["pipe", "pipe", "pipe"],
+    maxBuffer: 1024 * 1024 * 1024,
+  });
+  let at = 0;
+  for (const path of paths) {
+    const eol = batch.indexOf(0x0a, at);
+    if (eol < 0) break;
+    const header = batch.subarray(at, eol).toString("utf8").split(" ");
+    at = eol + 1;
+    if (header[1] === "missing" || header.length < 3) continue;
+    const size = Number(header[2]);
+    if (header[1] === "blob") out.set(path, batch.subarray(at, at + size));
+    at += size + 1;
+  }
+  return out;
 };
 
 /** path -> sha1 of its contents, or "deleted". */

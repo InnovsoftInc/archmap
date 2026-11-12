@@ -95,6 +95,42 @@ describe("map gate", () => {
     );
   });
 
+  describe("with mounted routers", () => {
+    const mounted = (routes: string) => {
+      write(
+        "apps/api/src/app.ts",
+        'import express from "express";\nimport { apiRouter } from "./routes/index.js";\nconst app = express();\napp.use("/api/v1", apiRouter);\n',
+      );
+      write(
+        "apps/api/src/routes/index.ts",
+        'import { Router } from "express";\nimport { permitsRouter } from "./permits.js";\nexport const apiRouter = Router();\napiRouter.use("/permits", permitsRouter);\n',
+      );
+      write(
+        "apps/api/src/routes/permits.ts",
+        `import { Router } from "express";\nexport const permitsRouter = Router();\n${routes}`,
+      );
+    };
+
+    it("passes a trivial edit to a mounted router whose routes already existed", () => {
+      mounted('permitsRouter.get("/", h);\n');
+      commit("permits\n\nArchmap: none - test setup");
+      write(
+        "apps/api/src/routes/permits.ts",
+        'import { Router } from "express";\nexport const permitsRouter = Router();\npermitsRouter.get("/", h);\n// tweak\n',
+      );
+      expect(gateProblems(root, dir(), "HEAD")).toEqual([]);
+    });
+
+    it("flags a new route in a mounted router with its full path", () => {
+      mounted('permitsRouter.get("/", h);\n');
+      commit("permits\n\nArchmap: none - test setup");
+      mounted('permitsRouter.get("/", h);\npermitsRouter.post("/:id", h);\n');
+      expect(problem()).toContain(
+        "apps/api/src/routes/permits.ts: new lead: route POST /api/v1/permits/:id",
+      );
+    });
+  });
+
   it("counts a lead that moved to another changed file as new", () => {
     const route =
       'import express from "express";\nconst app = express();\napp.post("/orders", h);\n';

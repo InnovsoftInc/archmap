@@ -1,9 +1,9 @@
-import { appsReader } from "./workspace.ts";
-import { routesReader } from "./routes.ts";
-import { schemaReader } from "./schema.ts";
-import { infraReader } from "./infra.ts";
-import { outsideReader } from "./outside.ts";
-import { ciReader } from "./ci.ts";
+import { appsReader, readsApps } from "./workspace.ts";
+import { readsRoutes, routesReader } from "./routes.ts";
+import { readsSchema, schemaReader } from "./schema.ts";
+import { infraReader, readsInfra } from "./infra.ts";
+import { outsideReader, readsOutside } from "./outside.ts";
+import { ciReader, readsCi } from "./ci.ts";
 import { sortFacts, walk } from "./walk.ts";
 import type { Reader, Scan } from "./types.ts";
 
@@ -18,6 +18,12 @@ const READERS: Reader[] = [
   outsideReader,
   ciReader,
 ];
+
+/** Whether any reader opens `file`: the files a scan's leads depend on. */
+export const scannerReads = (file: string): boolean =>
+  [readsApps, readsRoutes, readsSchema, readsInfra, readsOutside, readsCi].some(
+    (reads) => reads(file),
+  );
 
 // Files in common programming languages: a repo with any of them has code,
 // even with no package.json, routes or infrastructure.

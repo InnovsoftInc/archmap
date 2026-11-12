@@ -275,6 +275,24 @@ describe("routes", () => {
     });
   });
 
+  it("doesn't count a type-only framework import, and reads a default export with a comment", () => {
+    write(
+      "src/types.ts",
+      'import { x } from "./x"\nimport type { Router } from "express"\nexport const api = (r: Router) => r;\napi.get("/typed", h);\n',
+    );
+    write(
+      "src/app.ts",
+      'import express from "express";\nimport users from "./users.js";\nconst app = express();\napp.use("/users", users);\n',
+    );
+    write(
+      "src/users.ts",
+      'import express, { type Request } from "express";\nconst usersRouter = express.Router();\nusersRouter.get("/me", h);\nexport default usersRouter; // mounted in app.ts\n',
+    );
+    expect(routesReader(tmp, walk(tmp)).routes).toEqual([
+      { file: "src/users.ts", method: "GET", path: "/users/me" },
+    ]);
+  });
+
   it("finds Fastify routes", () => {
     expect(routesReader(fastify, walk(fastify)).routes).toEqual([
       { file: "apps/api/src/server.ts", method: "POST", path: "/accounts" },

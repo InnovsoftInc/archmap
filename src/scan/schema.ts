@@ -3,6 +3,8 @@ import type { Reader, Scan } from "./types.ts";
 
 const DRIZZLE =
   /\b(?:pgTable|mysqlTable|sqliteTable)\(\s*["'](\w+)["']\s*,\s*\{/;
+export const readsSchema = (f: string): boolean =>
+  /\.(?:prisma|sql|ts|js|mjs)$/.test(f);
 const SQL_TABLE = /^\s*create table (?:if not exists )?([^\s(]+)\s*\(/gim;
 // A .sql file that neither creates nor alters a table (a query, a grant) is
 // not part of the schema.
@@ -43,7 +45,7 @@ export const schemaReader: Reader = (root, files) => {
   const unreadable = readEach(
     root,
     files,
-    (f) => /\.(?:prisma|sql|ts|js|mjs)$/.test(f),
+    readsSchema,
     (file, text) => {
       const lines = text.split("\n");
       const before = tables.length;

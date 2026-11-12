@@ -16,8 +16,14 @@ const ROUTE =
   /\b(app|router|server|fastify)\.(get|post|put|patch|delete)\(\s*(["'`])(\/.*?)\3/g;
 const ANY_ROUTE =
   /(?<![\w$])([A-Za-z_$][\w$]*)\.(get|post|put|patch|delete|head|options|all)\(\s*(["'`])(\/.*?)\3/g;
+// A value import of the framework (not `import type`), a require, or a call
+// that creates an app or router.
+const FRAMEWORK_IMPORT =
+  /\bimport\s+(?!type\s)(?:(?!\bimport\b)[^;])*?\bfrom\s+["'](?:express|fastify)["']/;
 const FRAMEWORK =
-  /\bfrom\s+["'](?:express|fastify)["']|\brequire\(\s*["'](?:express|fastify)["']\s*\)|(?<![\w$.])(?:Router|express|Fastify|fastify)\(/;
+  /\brequire\(\s*["'](?:express|fastify)["']\s*\)|(?<![\w$.])(?:Router|express|Fastify|fastify)\(/;
+const usesFramework = (text: string): boolean =>
+  FRAMEWORK_IMPORT.test(text) || FRAMEWORK.test(text);
 // `x.use("/prefix", name)` mounts the router `name` under the prefix.
 const MOUNT =
   /(?<![\w$])([A-Za-z_$][\w$]*)\.use\(\s*(["'`])(\/.*?)\2\s*,\s*([A-Za-z_$][\w$]*)\s*[,)]/g;
@@ -29,11 +35,14 @@ const EXPORT_DECL =
   /\bexport\s+(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/g;
 const EXPORT_LIST = /\bexport\s*\{([^}]*)\}/g;
 const EXPORT_DEFAULT =
-  /\b(?:export\s+default|module\.exports\s*=)\s*([A-Za-z_$][\w$]*)\s*;?\s*$/gm;
+  /\b(?:export\s+default|module\.exports\s*=)\s*(?!(?:function|class|async|new)\b)([A-Za-z_$][\w$]*)(?![\w$.(])/g;
 const SOURCE_EXT = [
   ...[".ts", ".tsx", ".js", ".jsx"],
   ...[".mts", ".cts", ".mjs", ".cjs"],
 ];
+
+export const readsRoutes = (f: string): boolean =>
+  CODE.test(baseName(f)) && !NOT_APP_CODE.test(f);
 
 // Comment lines (`//`, `/*` and the `*` lines of a block comment) are blanked
 // rather than removed, so a call spread over several lines still matches.
@@ -208,7 +217,7 @@ export const routesReader: Reader = (root, files) => {
   const unreadable = readEach(
     root,
     files,
-    (f) => CODE.test(baseName(f)) && !NOT_APP_CODE.test(f),
+    readsRoutes,
     (file, text) => {
       if (isNextRoute(file)) {
         for (const match of withoutComments(text).matchAll(NEXT_METHOD)) {
@@ -216,7 +225,7 @@ export const routesReader: Reader = (root, files) => {
         }
         return;
       }
-      const mod = readModule(text, FRAMEWORK.test(text));
+      const mod = readModule(text, usesFramework(text));
       modules.set(file, mod);
       if (!mod.routes.length && !mod.mounts.length && IN_ROUTES.test(file))
         routeFiles.push({ file });

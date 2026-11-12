@@ -2,6 +2,7 @@ import { baseName, readEach, sortFacts } from "./walk.ts";
 import type { Reader, Scan } from "./types.ts";
 
 const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
+export const readsCi = (f: string): boolean => WORKFLOW.test(f);
 const DEPLOY =
   /\b(?:azure\/|aws-actions\/|docker\/build-push-action|vercel|netlify|fly)[\w./@-]*|\bdocker push\b/g;
 // Copying to a server: the command itself, not a ~/.ssh path or ssh-keyscan.
@@ -12,7 +13,7 @@ export const ciReader: Reader = (root, files) => {
   const unreadable = readEach(
     root,
     files,
-    (f) => WORKFLOW.test(f),
+    readsCi,
     (file, text) => {
       const deploys = new Set<string>();
       for (const line of text.split("\n")) {

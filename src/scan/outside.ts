@@ -20,12 +20,15 @@ const isEnvExample = (f: string) => {
   return name.endsWith(".env.example") || name === ".env.sample";
 };
 
+export const readsOutside = (f: string): boolean =>
+  isEnvExample(f) || baseName(f) === "package.json";
+
 export const outsideReader: Reader = (root, files) => {
   const outside: Scan["outside"] = [];
   const unreadable = readEach(
     root,
     files,
-    (f) => isEnvExample(f) || baseName(f) === "package.json",
+    readsOutside,
     (file, text) => {
       if (isEnvExample(file)) {
         for (const m of text.matchAll(/^\s*(?:export )?([A-Za-z_]\w*)\s*=/gm)) {

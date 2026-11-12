@@ -10,12 +10,18 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob, relative, resolve } from "node:path";
-import { changedFiles, commitsSince, fileAt, uncommittedFiles } from "./git.ts";
+import {
+  changedFiles,
+  commitsSince,
+  fileAt,
+  filesAt,
+  uncommittedFiles,
+} from "./git.ts";
 import { evidenceOf } from "./map/evidence.ts";
 import { loadMap } from "./map/load.ts";
 import { leadsOf, unconfirmedLeads } from "./map/leads.ts";
 import type { Finding, LoadedMap } from "./map/types.ts";
-import { scan } from "./scan/index.ts";
+import { scan, scannerReads } from "./scan/index.ts";
 import { cliCommand } from "./version.ts";
 
 export type GateHit = { file: string; why: string };
@@ -99,12 +105,12 @@ const newLeadsByFile = (
     map.config.ignore ?? [],
   ).filter((l) => changed.includes(l.file) && !isPackageJson(l.file));
   if (!now.length) return out;
-  // Scan the changed files as they were at base, in a temp dir at the same paths.
+  // Scan the repo as it was at base, in a temp dir at the same paths: every
+  // file a reader opens, so a route still gets the prefixes of the files
+  // that mount it. Only the changed files' leads are compared.
   const old = mkdtempSync(join(tmpdir(), "archmap-base-"));
   try {
-    for (const file of changed) {
-      const text = fileAt(root, base, file);
-      if (text === null) continue;
+    for (const [file, text] of filesAt(root, base, scannerReads)) {
       mkdirSync(dirname(join(old, file)), { recursive: true });
       writeFileSync(join(old, file), text);
     }
