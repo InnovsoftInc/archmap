@@ -29,10 +29,31 @@ export const repoRoot = (cwd: string): string | null => {
   }
 };
 
+const resolves = (root: string, ref: string): boolean => {
+  try {
+    git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** Files changed since `base`: committed (base...HEAD), staged, unstaged and untracked, relative to `root`. */
 export const changedFiles = (root: string, base: string): string[] => {
+  const fail = (detail: string, cause?: unknown): never => {
+    throw new Error(`Can't compare with ${base}: ${detail}`, { cause });
+  };
+  if (repoRoot(root) === null)
+    return fail("not a git repository (or git isn't installed)");
+  if (!resolves(root, base)) {
+    const guess = ["origin/HEAD", "origin/main", "main", "master"].find((r) =>
+      resolves(root, r),
+    );
+    return fail(
+      `no such branch or commit.${guess ? ` Try ${guess}` : ""}`.trim(),
+    );
+  }
   try {
-    git(root, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]);
     return [
       ...new Set([
         ...lines(
@@ -57,10 +78,7 @@ export const changedFiles = (root: string, base: string): string[] => {
       ]),
     ].sort();
   } catch (err) {
-    const detail = gitError(err);
-    throw new Error(`Can't compare with ${base}: ${detail || "unknown ref"}`, {
-      cause: err,
-    });
+    return fail(gitError(err), err);
   }
 };
 

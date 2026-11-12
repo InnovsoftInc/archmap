@@ -1,12 +1,20 @@
 // The map gate: a branch that changes the architecture must change the map.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join, matchesGlob, relative, resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 import { changedFiles, commitMessages, fileAt } from "./git.ts";
 import { evidenceOf } from "./map/evidence.ts";
 import { loadMap } from "./map/load.ts";
-import { unconfirmedLeads } from "./map/leads.ts";
-import type { Finding } from "./map/types.ts";
+import { leadsOf, unconfirmedLeads } from "./map/leads.ts";
+import type { Finding, LoadedMap } from "./map/types.ts";
 import { scan } from "./scan/index.ts";
 import { cliCommand } from "./version.ts";
 
@@ -69,6 +77,42 @@ const mapPrefix = (root: string, dir: string): string => {
   return rel ? `${rel}/` : "";
 };
 
+const isPackageJson = (file: string): boolean =>
+  file === "package.json" || file.endsWith("/package.json");
+
+/** For each changed file, its first unconfirmed lead that didn't exist at `base`. */
+const newLeadsByFile = (
+  root: string,
+  base: string,
+  changed: string[],
+  map: LoadedMap,
+): Map<string, string> => {
+  const out = new Map<string, string>();
+  const now = unconfirmedLeads(
+    scan(root),
+    map.docs,
+    map.config.ignore ?? [],
+  ).filter((l) => changed.includes(l.file) && !isPackageJson(l.file));
+  if (!now.length) return out;
+  // Scan the changed files as they were at base, in a temp dir at the same paths.
+  const old = mkdtempSync(join(tmpdir(), "archmap-base-"));
+  try {
+    for (const file of changed) {
+      const text = fileAt(root, base, file);
+      if (text === null) continue;
+      mkdirSync(dirname(join(old, file)), { recursive: true });
+      writeFileSync(join(old, file), text);
+    }
+    const before = new Set(leadsOf(scan(old)).map((l) => l.key));
+    for (const lead of now)
+      if (!before.has(lead.key) && !out.has(lead.file))
+        out.set(lead.file, lead.text);
+  } finally {
+    rmSync(old, { recursive: true, force: true });
+  }
+  return out;
+};
+
 /** The changed files that count as architectural, with why each does. */
 export const architecturalFiles = (
   root: string,
@@ -90,29 +134,20 @@ export const architecturalFiles = (
       const file = c.evidence.split("#")[0];
       if (!evidenceOwner.has(file)) evidenceOwner.set(file, doc.file);
     }
-  const leadByFile = new Map<string, string>();
-  for (const lead of unconfirmedLeads(
-    scan(root),
-    map.docs,
-    map.config.ignore ?? [],
-  ))
-    if (!leadByFile.has(lead.file)) leadByFile.set(lead.file, lead.text);
+  const newLeads = newLeadsByFile(root, base, changed, map);
 
   const hits: GateHit[] = [];
   for (const file of changed) {
     const owner = evidenceOwner.get(file);
-    const lead = leadByFile.get(file);
+    const lead = newLeads.get(file);
     const glob = matches(file, watch);
     let why: string | null = null;
     if (owner) why = `evidence of ${owner}`;
     else if (matches(file, STRUCTURAL)) why = "structural file";
-    else if (
-      (file === "package.json" || file.endsWith("/package.json")) &&
-      dependenciesChanged(root, base, file)
-    )
-      why = "dependencies changed";
-    else if (lead) why = `new lead: ${lead}`;
-    else if (glob) why = `matches watch ${glob}`;
+    else if (isPackageJson(file)) {
+      if (dependenciesChanged(root, base, file)) why = "dependencies changed";
+    } else if (lead) why = `new lead: ${lead}`;
+    if (!why && glob) why = `matches watch ${glob}`;
     if (why) hits.push({ file, why });
   }
   return hits;

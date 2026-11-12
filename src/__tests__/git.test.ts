@@ -59,7 +59,26 @@ describe("git helpers", () => {
   });
 
   it("names the ref when it is unknown", () => {
-    expect(() => changedFiles(root, "nope")).toThrow(/Can't compare with nope/);
+    expect(() => changedFiles(root, "nope")).toThrow(
+      "Can't compare with nope: no such branch or commit. Try main",
+    );
+    git("branch", "-m", "work");
+    expect(() => changedFiles(root, "nope")).toThrow(
+      "Can't compare with nope: no such branch or commit.",
+    );
+  });
+
+  it("keeps git's own message outside a repository", () => {
+    const outside = realpathSync(
+      mkdtempSync(join(tmpdir(), "archmap-no-git-")),
+    );
+    try {
+      expect(() => changedFiles(outside, "main")).toThrow(
+        /not a git repository/,
+      );
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("dirtyState records hashes of modified and untracked files", () => {

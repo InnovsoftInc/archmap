@@ -24,7 +24,7 @@ const write = (rel: string, text: string) => {
 const config = (extra: Record<string, unknown> = {}) =>
   write(
     "architecture/archmap.config.json",
-    JSON.stringify({ name: "Test", ignore: ["scan:app:."], ...extra }),
+    JSON.stringify({ name: "Test", ...extra }),
   );
 const pkg = (extra: Record<string, unknown> = {}) =>
   JSON.stringify({
@@ -114,6 +114,40 @@ describe("map gate", () => {
       pkg({ dependencies: { express: "^4.0.0", pg: "^8" } }),
     );
     expect(problem()).toContain("package.json: dependencies changed");
+  });
+
+  it("passes a version-only bump in a workspace package.json with an unconfirmed app", () => {
+    write("tools/lint/package.json", pkg({ name: "lint" }));
+    commit("tool");
+    write("tools/lint/package.json", pkg({ name: "lint", version: "9.9.9" }));
+    expect(gateProblems(root, dir(), "HEAD")).toEqual([]);
+  });
+
+  it("passes when a route file with an already-unconfirmed route changes without a new route", () => {
+    write(
+      "apps/api/src/other.ts",
+      'import express from "express";\nconst app = express();\napp.post("/orders", (_req, res) => res.send("ok"));\n',
+    );
+    commit("orders");
+    write(
+      "apps/api/src/other.ts",
+      'import express from "express";\nconst app = express();\n// fix\napp.post("/orders", (_req, res) => res.send("fine"));\n',
+    );
+    expect(gateProblems(root, dir(), "HEAD")).toEqual([]);
+    write(
+      "apps/api/src/other.ts",
+      'import express from "express";\nconst app = express();\napp.post("/orders", (_req, res) => res.send("ok"));\napp.get("/orders", (_req, res) => res.send("ok"));\n',
+    );
+    expect(problem()).toContain("other.ts: new lead: route GET /orders");
+  });
+
+  it("fails when .env.example gains an env var, but not when only a comment changes", () => {
+    write(".env.example", "# keys\nSTRIPE_API_KEY=\n");
+    commit("env");
+    write(".env.example", "# the keys\nSTRIPE_API_KEY=\n");
+    expect(gateProblems(root, dir(), "HEAD")).toEqual([]);
+    write(".env.example", "# keys\nSTRIPE_API_KEY=\nSENDGRID_API_KEY=\n");
+    expect(problem()).toContain(".env.example: new lead:");
   });
 
   it("counts a package.json missing at the base as changed", () => {
