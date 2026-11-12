@@ -165,7 +165,15 @@ const OPS: Op[] = [
     name: "Auth",
     type: "module",
     parent: "api_endpoints",
+    status: "planned",
     purpose: "Endpoints to be designed",
+  }),
+  add("service", "mod_billing", {
+    name: "Billing",
+    type: "module",
+    parent: "api",
+    status: "in build",
+    purpose: "Invoices",
   }),
   add("service", "lib_zod", {
     name: "Zod",
@@ -204,7 +212,31 @@ const OPS: Op[] = [
     protocol: "SQL over TLS",
   }),
   add("connection", "api->api", { from: "ep_users", to: "api", label: "self" }),
-  add("connection", "api->mail", { from: "api", to: "mailer", label: "Mail" }),
+  add("connection", "api->mail", {
+    from: "api",
+    to: "mailer",
+    label: "Mail",
+    status: "planned",
+  }),
+  add("connection", "mail->api", {
+    from: "mailer",
+    to: "api",
+    label: "Bounces",
+    protocol: "Webhook",
+  }),
+  add("connection", "mail->portal", {
+    from: "mailer",
+    to: "old_portal",
+    label: "Notices",
+    status: "in build",
+  }),
+  add("connection", "web->api-again", {
+    from: "web_app",
+    to: "api",
+    label: "All app data",
+    protocol: "HTTPS",
+  }),
+  add("connection", "ghost->api", { from: "ghost", to: "api", label: "?" }),
   // People.
   add("persona", "staff_admin", {
     name: "Staff admin",
@@ -319,7 +351,10 @@ describe("migrate", () => {
     ]);
     expect(api.data.libraries).toEqual([{ name: "Zod", why: "Validation" }]);
     expect(api.body).toContain("List users");
-    expect(api.body).toContain("- **Auth**: Endpoints to be designed");
+    expect(api.body).toContain(
+      "- **Auth**: Endpoints to be designed (planned)",
+    );
+    expect(api.body).toContain("- **Billing**: Invoices\n");
     expect(find("services", "web-app").data.libraries).toEqual([
       { name: "Vitest", why: "Tests" },
     ]);
@@ -350,10 +385,30 @@ describe("migrate", () => {
     migrate(root, dir);
     expect(find("services", "api").data.connects).toEqual([
       { to: "postgres", why: "Reads users", how: "SQL" },
-      { to: "mailer", why: "Mail" },
+      { to: "mailer", why: "Mail", status: "planned" },
     ]);
     expect(find("services", "web-app").data.connects).toEqual([
       { to: "api", why: "All app data", how: "HTTPS" },
+    ]);
+  });
+
+  it("keeps connections from externals on the external, including external to external", () => {
+    writeLedger();
+    migrate(root, dir);
+    expect(find("external", "mailer").data.connects).toEqual([
+      { to: "api", why: "Bounces", how: "Webhook" },
+      { to: "old-portal", why: "Notices" },
+    ]);
+  });
+
+  it("reports every dropped connection with its reason", () => {
+    writeLedger();
+    const lines = migrate(root, dir).lines;
+    expect(lines.filter((l) => l.startsWith("Dropped connection"))).toEqual([
+      "Dropped connection api → postgres (duplicate of ep_users → postgres, with a different label or protocol)",
+      "Dropped connection ep_users → api (both ends are in api)",
+      "Dropped connection web_app → api (duplicate of web_app → api)",
+      "Dropped connection ghost → api (no doc for ghost)",
     ]);
   });
 
@@ -432,6 +487,75 @@ describe("migrate", () => {
       (p) => !p.message.includes("evidence"),
     );
     expect(problems).toEqual([]);
+  });
+
+  it("refuses when two old ids become the same new id, writing nothing", () => {
+    writeLedger([
+      add("service", "web_app", { name: "A", type: "app", purpose: "a" }),
+      add("service", "web-app", { name: "B", type: "app", purpose: "b" }),
+    ]);
+    const r = migrate(root, dir);
+    expect(r.ok).toBe(false);
+    expect(r.lines.join("\n")).toContain(
+      "web_app and web-app would both become web-app",
+    );
+    expect(existsSync(join(dir, "services"))).toBe(false);
+    expect(existsSync(join(dir, "README.md"))).toBe(false);
+    expect(
+      JSON.parse(readFileSync(join(dir, "archmap.config.json"), "utf8"))
+        .archmap,
+    ).toBeUndefined();
+  });
+
+  it("refuses when a persona and a service share an id", () => {
+    writeLedger([
+      add("service", "admin", { name: "Admin", type: "app", purpose: "a" }),
+      add("persona", "admin", { name: "Admin", blurb: "b" }),
+    ]);
+    const r = migrate(root, dir);
+    expect(r.ok).toBe(false);
+    expect(r.lines.join("\n")).toContain(
+      "admin and admin would both become admin",
+    );
+    expect(existsSync(join(dir, "personas"))).toBe(false);
+  });
+
+  it("gives a made-up database store an id no other doc uses", () => {
+    writeLedger([
+      add("service", "database", {
+        name: "Files",
+        type: "store",
+        purpose: "Uploads.",
+      }),
+      add("table", "t", { columns: [{ name: "id" }] }),
+    ]);
+    expect(migrate(root, dir).ok).toBe(true);
+    expect(find("stores", "database").data).toMatchObject({ kind: "bucket" });
+    expect(find("stores", "database").data.tables).toBeUndefined();
+    expect(find("stores", "database-2").data).toMatchObject({
+      kind: "database",
+      tables: [{ name: "t", columns: [{ name: "id" }] }],
+    });
+  });
+
+  it("skips a flow with no persona step and describes unlabelled steps", () => {
+    writeLedger([
+      ...OPS,
+      add("flow", "nightly", {
+        name: "Nightly",
+        steps: [{ from: "jobs", to: "postgres", label: "Purges" }],
+      }),
+      add("flow", "quiet", {
+        name: "Quiet",
+        steps: [{ from: "persona:staff_admin", to: "web_app" }],
+      }),
+    ]);
+    const r = migrate(root, dir);
+    expect(r.lines).toContain("Skipped flow nightly (no persona step)");
+    expect(ids("flows").sort()).toEqual(["quiet", "sign-in"]);
+    expect(find("flows", "quiet").data.steps).toEqual([
+      { by: "staff-admin", at: "web-app", does: "(not described)" },
+    ]);
   });
 
   it("migrates a copy of bcacs's saves into docs that pass schema checks except evidence presence", () => {

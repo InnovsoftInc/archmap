@@ -11,14 +11,19 @@ const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const entries = (doc: Doc, key: string): [unknown, string][] =>
   list(Reflect.get(doc.data, key)).map((e, i) => [e, `${key}[${i}]`]);
 
-type Cited = { field: string; evidence: string };
+/** `planned` marks an entry with `status: planned`, whose evidence isn't checked yet. */
+type Cited = { field: string; evidence: string; planned?: true };
 
 /** Every `evidence` in the doc with its field path; columns without their own are not listed. */
 export const evidenceOf = (doc: Doc): Cited[] => {
   const out: Cited[] = [];
   const add = (entry: unknown, path: string) => {
     if (isObject(entry) && typeof entry.evidence === "string")
-      out.push({ field: `${path}.evidence`, evidence: entry.evidence });
+      out.push({
+        field: `${path}.evidence`,
+        evidence: entry.evidence,
+        ...(entry.status === "planned" ? { planned: true as const } : {}),
+      });
   };
   for (const key of ["connects", "endpoints", "jobs", "libraries", "roles"])
     for (const [entry, path] of entries(doc, key)) add(entry, path);
@@ -73,6 +78,7 @@ export const evidenceProblems = (root: string, docs: Doc[]): Finding[] => {
     if (isPlanned(doc)) continue;
     const add = (message: string) => findings.push({ file: doc.file, message });
     for (const c of evidenceOf(doc)) {
+      if (c.planned) continue;
       const problem = evidenceProblem(root, c);
       if (problem) add(problem);
     }

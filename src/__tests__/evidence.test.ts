@@ -73,6 +73,18 @@ describe("evidenceProblems", () => {
     ]);
   });
 
+  it("skips a planned connects entry, checking the rest", () => {
+    const doc = service({
+      connects: [
+        { to: "m", status: "planned", evidence: "apps/api/later.ts" },
+        { to: "n", evidence: "apps/api/mail.ts" },
+      ],
+    });
+    expect(messages([doc])).toEqual([
+      "connects[1].evidence apps/api/mail.ts does not exist",
+    ]);
+  });
+
   it("flags a symbol no longer in the file", () => {
     write("apps/api/c.ts", "export const list = 1;");
     const doc = service({

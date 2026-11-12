@@ -260,6 +260,40 @@ describe("schemaProblems", () => {
     );
   });
 
+  it("lets external docs carry connects, resolved and evidenced like services", () => {
+    const github = doc(
+      "external",
+      "github",
+      live("GitHub", {
+        kind: "hosting",
+        connects: [
+          { to: "acr", why: "pushes", evidence: "ci.yml" },
+          { to: "ghost", evidence: "ci.yml" },
+          { to: "api" },
+        ],
+      }),
+    );
+    const acr = doc("external", "acr", live("ACR", { kind: "hosting" }));
+    expect(messages([github, acr, service("api")])).toEqual([
+      "connects[2] needs evidence",
+      'connects[1].to "ghost" does not match a service, store or external',
+    ]);
+  });
+
+  it("validates a connects status and exempts planned entries from evidence", () => {
+    const d = service("api", {
+      connects: [
+        { to: "db", status: "planned" },
+        { to: "db", status: "live" },
+        { to: "db", status: "soon", evidence: "a.ts" },
+      ],
+    });
+    expect(messages([d, store("db")])).toEqual([
+      'connects[2].status "soon" must be one of live, planned, retiring',
+      "connects[1] needs evidence",
+    ]);
+  });
+
   it("requires evidence unless the doc is planned", () => {
     const d = service("api", {
       connects: [{ to: "api" }],

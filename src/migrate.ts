@@ -10,7 +10,13 @@ import {
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { stringify } from "yaml";
-import { replay, type Column, type Model, type Service } from "./core.ts";
+import {
+  replay,
+  type Column,
+  type Connection,
+  type Model,
+  type Service,
+} from "./core.ts";
 import { VERSION } from "./home.ts";
 import { FOLDERS } from "./map/types.ts";
 import type { Folder, Result } from "./map/types.ts";
@@ -27,6 +33,8 @@ type Entry = Record<string, unknown>;
 type Draft = {
   folder: Folder;
   id: string;
+  /** The old id it came from, for messages. */
+  source: string;
   name: string;
   status: string;
   kind?: string;
@@ -127,8 +135,9 @@ const placeOf = (s: Service): { folder: Folder; kind: string } => {
 
 const isStore = (s: Service) => s.type === "store" || s.type === "container";
 
-/** Builds the drafts from a replayed model. */
-const draftsFrom = (m: Model): Draft[] => {
+/** Builds the drafts from a replayed model, with a line for each thing left out. */
+const draftsFrom = (m: Model): { drafts: Draft[]; lines: string[] } => {
+  const lines: string[] = [];
   const services = new Map(Object.entries(m.services));
 
   // The parent, skipping groups: a group's children belong to the group's parent.
@@ -159,6 +168,7 @@ const draftsFrom = (m: Model): Draft[] => {
     drafts.set(id, {
       folder,
       id: toId(id),
+      source: id,
       name: text(s.name) ?? id,
       status: statusOf(s.status, s.lane),
       kind,
@@ -196,30 +206,49 @@ const draftsFrom = (m: Model): Draft[] => {
     } else if (s.type === "job" && isService) push(owner, "jobs", { name });
     else if ((s.type === "library" || s.type === "tool") && isService)
       push(owner, "libraries", compact({ name, why: purpose }));
-    else owner.bullets.push(bullet(name, purpose));
+    else
+      owner.bullets.push(
+        bullet(name, purpose) +
+          (statusOf(s.status) === "planned" ? " (planned)" : ""),
+      );
   }
 
-  // Connections: from the doc that holds `from` to the doc that holds `to`. Externals
-  // can't hold connections, so an external's connection is recorded on the other end.
-  const seen = new Set<string>();
+  // Connections: on the doc that holds `from`, pointing at the doc that holds `to`.
+  const kept = new Map<string, Connection>();
   for (const c of Object.values(m.connections)) {
     const from = docOf(c.from);
     const to = docOf(c.to);
-    if (!from || !to || from === to) continue;
-    let owner = drafts.get(from);
-    let target = to;
-    if (owner?.folder === "external") {
-      owner = drafts.get(to);
-      target = from;
+    const drop = (reason: string) =>
+      lines.push(`Dropped connection ${c.from} → ${c.to} (${reason})`);
+    const owner = from ? drafts.get(from) : undefined;
+    if (!owner || !to) {
+      drop(`no doc for ${owner ? c.to : c.from}`);
+      continue;
     }
-    if (!owner || owner.folder === "external") continue;
-    const key = `${owner.id}->${target}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (from === to) {
+      drop(`both ends are in ${from}`);
+      continue;
+    }
+    const key = `${from}->${to}`;
+    const first = kept.get(key);
+    if (first) {
+      const same = first.label === c.label && first.protocol === c.protocol;
+      drop(
+        `duplicate of ${first.from} → ${first.to}${same ? "" : ", with a different label or protocol"}`,
+      );
+      continue;
+    }
+    kept.set(key, c);
+    const status = statusOf(c.status);
     push(
       owner,
       "connects",
-      compact({ to: toId(target), why: text(c.label), how: text(c.protocol) }),
+      compact({
+        to: toId(to),
+        why: text(c.label),
+        how: text(c.protocol),
+        status: status === "live" ? undefined : status,
+      }),
     );
   }
 
@@ -229,9 +258,19 @@ const draftsFrom = (m: Model): Draft[] => {
   const tables = Object.entries(m.tables);
   const enums = Object.entries(m.enums);
   if (!db && (tables.length || enums.length)) {
+    const taken = new Set(
+      [
+        ...drafts.keys(),
+        ...Object.keys(m.personas),
+        ...Object.keys(m.flows),
+      ].map(toId),
+    );
+    let id = "database";
+    for (let n = 2; taken.has(id); n++) id = `database-${n}`;
     db = {
       folder: "stores",
-      id: "database",
+      id,
+      source: "(none: made up for the tables)",
       name: "Database",
       status: "live",
       kind: "database",
@@ -240,7 +279,6 @@ const draftsFrom = (m: Model): Draft[] => {
       bullets: [],
       lists: new Map(),
     };
-    drafts.set("database", db);
   }
   if (db) {
     const areas = new Map(Object.entries(m.areas));
@@ -277,11 +315,13 @@ const draftsFrom = (m: Model): Draft[] => {
   }
 
   const out = [...drafts.values()];
+  if (db && !databases.includes(db)) out.push(db);
 
   for (const [id, p] of Object.entries(m.personas))
     out.push({
       folder: "personas",
       id: toId(id),
+      source: id,
       name: text(p.name) ?? id,
       status: statusOf(p.status),
       code: [],
@@ -299,18 +339,28 @@ const draftsFrom = (m: Model): Draft[] => {
   for (const [id, f] of Object.entries(m.flows)) {
     const steps = f.steps ?? [];
     const first = steps.find((st) => st.from.startsWith("persona:"));
-    const lists = new Map<string, unknown>();
-    if (first) lists.set("persona", toId(first.from.slice(8)));
-    lists.set(
-      "steps",
-      steps.map((st) => {
-        const at = st.to && !st.to.startsWith("persona:") ? st.to : st.from;
-        return { by: actor(st.from), at: actor(at), does: st.label ?? "" };
-      }),
-    );
+    if (!first) {
+      lines.push(`Skipped flow ${id} (no persona step)`);
+      continue;
+    }
+    const lists = new Map<string, unknown>([
+      ["persona", toId(first.from.slice(8))],
+      [
+        "steps",
+        steps.map((st) => {
+          const at = st.to && !st.to.startsWith("persona:") ? st.to : st.from;
+          return {
+            by: actor(st.from),
+            at: actor(at),
+            does: text(st.label) ?? "(not described)",
+          };
+        }),
+      ],
+    ]);
     out.push({
       folder: "flows",
       id: toId(id),
+      source: id,
       name: text(f.name) ?? id,
       status: statusOf(f.status),
       code: [],
@@ -319,7 +369,19 @@ const draftsFrom = (m: Model): Draft[] => {
       lists,
     });
   }
-  return out;
+  return { drafts: out, lines };
+};
+
+/** One line per new id that more than one old thing would be written to. */
+const collisions = (drafts: Draft[]): string[] => {
+  const byId = new Map<string, Draft[]>();
+  for (const d of drafts) byId.set(d.id, [...(byId.get(d.id) ?? []), d]);
+  return [...byId]
+    .filter(([, same]) => same.length > 1)
+    .map(
+      ([id, same]) =>
+        `${same.map((d) => d.source).join(" and ")} would both become ${id} (${same.map((d) => `${d.folder}/${id}.md`).join(", ")}); rename one with a save and run migrate again.`,
+    );
 };
 
 const hasMarkdown = (dir: string): boolean =>
@@ -348,9 +410,12 @@ export const migrate = (root: string, dir: string): Result => {
   } catch (err) {
     return { ok: false, lines: [(err as Error).message] };
   }
-  const lines = project.fileErrors.map((e) => `Skipped: ${e}`);
   const m = replay(project.saves);
-  const drafts = draftsFrom(m);
+  const { drafts, lines: dropped } = draftsFrom(m);
+  const clashes = collisions(drafts);
+  if (clashes.length)
+    return { ok: false, lines: ["Nothing was written.", ...clashes] };
+  const lines = [...project.fileErrors.map((e) => `Skipped: ${e}`), ...dropped];
 
   const counts = new Map<Folder, number>(FOLDERS.map((f) => [f, 0]));
   for (const d of drafts) {

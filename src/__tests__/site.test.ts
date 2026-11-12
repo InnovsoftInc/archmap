@@ -115,6 +115,30 @@ describe("toViewModel", () => {
     expect(m.problems).toEqual([]);
   });
 
+  it("emits connections from external docs and passes each entry's status, default live", () => {
+    const m = toViewModel([
+      doc("external", "github", {
+        name: "GitHub",
+        status: "live",
+        kind: "hosting",
+        connects: [{ to: "acr", why: "pushes", status: "planned" }],
+      }),
+      doc("external", "acr", {
+        name: "ACR",
+        status: "live",
+        kind: "hosting",
+        connects: [{ to: "github" }],
+      }),
+    ]);
+    expect(m.connections["github-acr"]).toMatchObject({
+      from: "github",
+      to: "acr",
+      label: "pushes",
+      status: "planned",
+    });
+    expect(m.connections["acr-github"]?.status).toBe("live");
+  });
+
   it("maps stores to data-lane services, tables with areas from group, and enums", () => {
     const m = toViewModel([
       doc("stores", "db", {

@@ -20,7 +20,13 @@ const req: Spec = { t: "string", required: true };
 const opt: Spec = { t: "string" };
 const connects: Spec = {
   t: "list",
-  item: { to: req, why: opt, how: opt, evidence: opt },
+  item: {
+    to: req,
+    why: opt,
+    how: opt,
+    status: { t: "enum", values: STATUSES },
+    evidence: opt,
+  },
 };
 const kind = (...values: string[]): Spec => ({
   t: "enum",
@@ -77,6 +83,7 @@ const SHAPES: Record<Folder, Shape> = {
   external: {
     ...COMMON,
     kind: kind("auth", "email", "payments", "ai", "hosting", "other"),
+    connects,
   },
   personas: {
     ...COMMON,
@@ -90,7 +97,7 @@ const SHAPES: Record<Folder, Shape> = {
   },
 };
 
-/** Lists whose entries must cite evidence unless the doc is planned. */
+/** Lists whose entries must cite evidence unless the doc, or the entry itself, is planned. */
 const NEEDS_EVIDENCE = ["connects", "endpoints", "jobs", "tables", "roles"];
 
 export const isPlanned = (doc: Doc): boolean => doc.data.status === "planned";
@@ -211,7 +218,11 @@ export const schemaProblems = (docs: Doc[]): Finding[] => {
     if (!isPlanned(doc))
       for (const key of NEEDS_EVIDENCE)
         list(get(doc.data, key)).forEach((entry, i) => {
-          if (isObject(entry) && !isText(entry.evidence))
+          if (
+            isObject(entry) &&
+            entry.status !== "planned" &&
+            !isText(entry.evidence)
+          )
             out.push(`${key}[${i}] needs evidence`);
         });
 

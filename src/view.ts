@@ -144,6 +144,7 @@ export const toViewModel = (docs: Doc[]): Model => {
         to,
         label: text(c.why),
         protocol: text(c.how),
+        status: text(c.status) ?? "live",
       };
     }
     if (d.folder === "personas")
