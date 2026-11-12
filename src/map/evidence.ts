@@ -1,6 +1,6 @@
 // Checking that the evidence and code paths a map cites exist in the repo.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { isPlanned } from "./schema.ts";
 import type { Doc, Finding } from "./types.ts";
@@ -31,10 +31,18 @@ export const evidenceOf = (doc: Doc): Cited[] => {
   return out;
 };
 
+const escapes = (root: string, abs: string): boolean => {
+  const rel = relative(root, abs);
+  return rel.startsWith("..") || isAbsolute(rel);
+};
+
+/** The absolute path, or null when it leaves the repo, lexically or through a symlink. */
 const inside = (root: string, path: string): string | null => {
   const abs = resolve(root, path);
-  const rel = relative(root, abs);
-  return rel.startsWith("..") || isAbsolute(rel) ? null : abs;
+  if (escapes(root, abs)) return null;
+  if (existsSync(abs) && escapes(realpathSync(root), realpathSync(abs)))
+    return null;
+  return abs;
 };
 
 const isFile = (abs: string): boolean =>

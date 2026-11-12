@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -99,6 +105,30 @@ describe("evidenceProblems", () => {
       "jobs[1].evidence /etc/passwd must be a file inside the repo",
       "jobs[2].evidence apps/api must be a file inside the repo",
     ]);
+  });
+
+  it("never reads through a symlink that points outside the repo", () => {
+    const outside = mkdtempSync(join(tmpdir(), "archmap-outside-"));
+    try {
+      writeFileSync(join(outside, "secret.txt"), "root:x:0:0");
+      write("apps/api/real.ts");
+      symlinkSync(join(outside, "secret.txt"), join(root, "apps/api/x.ts"));
+      symlinkSync(outside, join(root, "apps/linked"));
+      const doc = service({
+        code: ["apps/linked"],
+        endpoints: [
+          { route: "GET /x", evidence: "apps/api/x.ts#root" },
+          { route: "GET /y", evidence: "apps/api/x.ts#nope" },
+        ],
+      });
+      expect(messages([doc])).toEqual([
+        "endpoints[0].evidence apps/api/x.ts#root must be a file inside the repo",
+        "endpoints[1].evidence apps/api/x.ts#nope must be a file inside the repo",
+        "code apps/linked must be inside the repo",
+      ]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("checks code paths exist (files or folders) unless the doc is planned", () => {
