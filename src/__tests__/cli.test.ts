@@ -80,7 +80,7 @@ describe("archmap CLI", () => {
     expect(r.status).toBe(0);
   });
 
-  it("scan prints one `<key>  <file>` line per lead, or JSON", () => {
+  it("scan prints one key (`scan:<kind>:<name>@<file>`) per lead, or JSON", () => {
     cpSync(
       join(import.meta.dirname, "fixtures", "scan", "express-prisma"),
       root,
@@ -93,9 +93,8 @@ describe("archmap CLI", () => {
     expect(r.stdout.trim()).not.toBe("");
     const j = run(["scan", "--json"]);
     const leads = JSON.parse(j.stdout) as { key: string; file: string }[];
-    expect(r.stdout.trim().split("\n")).toEqual(
-      leads.map((l) => `${l.key}  ${l.file}`),
-    );
+    expect(r.stdout.trim().split("\n")).toEqual(leads.map((l) => l.key));
+    expect(leads.every((l) => l.key.endsWith(`@${l.file}`))).toBe(true);
   });
 
   it("a bad --base prints the message, exits 1 and shows no stack", () => {

@@ -145,10 +145,70 @@ describe("runCheck", () => {
   });
 
   it("drops leads listed in ignore", () => {
-    config({ ignore: ["scan:route:GET /health"] });
+    config({ ignore: ["scan:route:GET /health@apps/api/src/routes.ts"] });
     api();
     repo();
     expect(warnings().filter((w) => w.includes("GET /health"))).toEqual([]);
+  });
+
+  it("keys leads by file, so ignoring one compose service leaves the other", () => {
+    config({ ignore: ["scan:infra:service:api@docker-compose-dev.yml"] });
+    api();
+    const compose = "services:\n  api:\n    build: .\n";
+    write("docker-compose.yml", compose);
+    write("docker-compose-dev.yml", compose);
+    expect(scan(root).infra.length).toBe(2);
+    expect(
+      runCheck(root, dir)
+        .leads.map((l) => l.key)
+        .filter((k) => k.startsWith("scan:infra:")),
+    ).toEqual(["scan:infra:service:api@docker-compose.yml"]);
+  });
+
+  it("matches ignore entries as globs against lead keys", () => {
+    api();
+    write("infra/main.tf", 'resource "azurerm_key_vault" "main" {}\n');
+    write("infra/db/pg.tf", 'resource "azurerm_postgresql" "db" {}\n');
+    write("deploy/main.tf", 'resource "azurerm_key_vault" "other" {}\n');
+    const infra = () =>
+      runCheck(root, dir)
+        .leads.map((l) => l.key)
+        .filter((k) => k.startsWith("scan:infra:"));
+    config({ ignore: ["scan:infra:*@infra/**"] });
+    expect(infra()).toEqual([
+      "scan:infra:azurerm_key_vault:other@deploy/main.tf",
+    ]);
+    // An entry without "@<file>" matches the lead in every file.
+    config({ ignore: ["scan:infra:azurerm_key_vault:*"] });
+    expect(infra()).toEqual(["scan:infra:azurerm_postgresql:db@infra/db/pg.tf"]);
+  });
+
+  it("confirms infra, Docker and CI leads by a code entry of the file or a folder above it", () => {
+    write("apps/api/Dockerfile", "FROM node:24\n");
+    write("infra/pg.tf", 'resource "azurerm_postgresql" "db" {}\n');
+    write(
+      ".github/workflows/deploy.yml",
+      "name: Deploy\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n",
+    );
+    write("apps/api/src/server.ts", 'app.get("/health", h);\n');
+    config();
+    const leads = () =>
+      runCheck(root, dir).leads.map((l) => `${l.file}: ${l.text}`);
+    api();
+    expect(leads()).toEqual([
+      "apps/api/src/server.ts: route GET /health",
+      "apps/api/Dockerfile: docker image apps/api",
+      "infra/pg.tf: terraform azurerm_postgresql db",
+      ".github/workflows/deploy.yml: CI workflow deploy.yml",
+    ]);
+    api(
+      "code:\n  - apps/api\n  - infra/pg.tf\n  - .github/workflows/\n",
+    );
+    // Routes keep their own rule: a code entry doesn't confirm them.
+    expect(leads()).toEqual(["apps/api/src/server.ts: route GET /health"]);
+    // A sibling path with the same prefix is not a parent folder.
+    api("code:\n  - apps/ap\n  - infra/pg\n");
+    expect(leads()).toHaveLength(4);
   });
 
   it("prints json with errors and warnings", () => {
@@ -204,7 +264,7 @@ describe("unconfirmedLeads", () => {
         s,
         [doc("services", "api", { endpoints: [{ route }] })],
         [],
-      ).some((l) => l.key === "scan:route:GET /health");
+      ).some((l) => l.key === "scan:route:GET /health@apps/api/src/routes.ts");
     expect(has("GET /health")).toBe(false);
     expect(has("GET /health/")).toBe(false);
     expect(has("GET /other")).toBe(true);
@@ -221,9 +281,9 @@ describe("unconfirmedLeads", () => {
     s.tables.push({ name: "users", columns: [], file: "schema.prisma" });
     s.outside.push({ name: "SendGrid", via: "sdk", file: "mail.ts" });
     expect(unconfirmedLeads(s, [], []).map((l) => l.key)).toEqual([
-      "scan:app:apps/api",
-      "scan:table:users",
-      "scan:outside:SendGrid",
+      "scan:app:apps/api@apps/api/package.json",
+      "scan:table:users@schema.prisma",
+      "scan:outside:SendGrid@mail.ts",
     ]);
     expect(
       unconfirmedLeads(
@@ -240,7 +300,10 @@ describe("unconfirmedLeads", () => {
       unconfirmedLeads(s, [doc("external", "x", { name: "sendgrid" })], []).map(
         (l) => l.key,
       ),
-    ).toEqual(["scan:app:apps/api", "scan:table:users"]);
+    ).toEqual([
+      "scan:app:apps/api@apps/api/package.json",
+      "scan:table:users@schema.prisma",
+    ]);
   });
 });
 
@@ -256,7 +319,7 @@ describe("unconfirmedLeads: apps", () => {
     const s = scan(root);
     s.apps.push({ name: "a", path, deps: [], file: `${path}/package.json` });
     return unconfirmedLeads(s, [svc(code)], [])
-      .map((l) => l.key)
+      .map((l) => l.key.split("@")[0])
       .filter((k) => k.startsWith("scan:app:"));
   };
 

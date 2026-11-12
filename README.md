@@ -39,7 +39,9 @@ architecture/
   flows/<id>.md         the main journeys: who does what, in which service
 ```
 
-The file name is the id. Frontmatter holds the facts the diagrams need (kind, status, connections, endpoints, tables) and each carries `evidence`: a file path, optionally with `#Symbol`. The body explains in plain language: a summary, then `## How it works`, then `## For developers`. The map describes the current state; history is `git log architecture/`.
+The file name is the id. Frontmatter holds the facts the diagrams need (kind, status, connections, endpoints, tables) and each carries `evidence`: a file path, optionally with `#Symbol` (a whole identifier of at least 3 characters). The body explains in plain language: a summary, then `## How it works`, then `## For developers`. The map describes the current state; history is `git log architecture/`.
+
+`check` warns about leads: things `scan` found in the code that the map doesn't cover. Each has a key, `scan:<kind>:<name>@<file>` (for example `scan:route:GET /api/v1/healthcheck@apps/api/src/routes/healthcheck.ts`). To drop a lead that isn't architecture, add its key to `ignore` in `archmap.config.json`. An entry may be a glob over keys (`scan:infra:*@infra/modules/**`), and an entry without `@<file>` matches the lead in every file.
 
 ## Commands
 
@@ -48,7 +50,7 @@ Run them as `npx -y github:InnovsoftInc/archmap#v0.4.0 <command>`, written `arch
 | Command                                                                | What it does                                                                    |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `archmap init [--name] [--ci github\|azure]`                           | Creates `architecture/`, the `AGENTS.md` section and, with `--ci`, the workflow |
-| `archmap scan [--json]`                                                | Lists leads from the code: `<key>  <file>` per line, or JSON                    |
+| `archmap scan [--json]`                                                | Lists leads from the code: one key per line, or JSON                            |
 | `archmap check [--json] [--strict] [--base <ref>]`                     | Validates the map and its evidence; with `--base`, the map gate (run it in CI)  |
 | `archmap brief [--task setup\|update\|review\|hosting] [--base <ref>]` | Prints the task for an agent to follow                                          |
 | `archmap agent [--task ...] [--base <ref>]`                            | Runs `agent.command` from the config on the brief                               |

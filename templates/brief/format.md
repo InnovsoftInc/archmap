@@ -36,7 +36,8 @@ error, in list entries too.
 
 **Evidence.** Every `connects`, `endpoints`, `jobs`, `tables` and `columns`
 entry, and every `roles` entry, has an `evidence` field: a repo-relative path,
-optionally with `#Symbol` (the symbol must appear in the file). A file whose
+optionally with `#Symbol` (the symbol must appear in the file as a whole
+identifier, at least 3 characters long). A file whose
 `status` is `planned`, or a `connects` entry whose `status` is `planned`, may
 leave it out. A column may leave it out when its table has it.
 
@@ -105,3 +106,14 @@ Start in `apps/api/src/server.ts`. Run it with `pnpm --filter api dev`; it needs
 Controllers live next to their feature folder; the reminder job runs from the
 scheduler in `apps/api/src/jobs`.
 ```
+
+**Leads.** Check warns about each thing the scanner found that the map doesn't
+cover yet. A lead is confirmed by evidence that cites its file, and by its own
+match: an app by a `code` entry at or inside its path, a route by an `endpoints`
+route, a table by a store table's name, an outside service by an external's id
+or name, and an infrastructure, Docker or CI lead by a `code` entry that is its
+file or a folder above it. A lead that is not part of the architecture goes in
+`ignore` in `archmap.config.json`: each entry is a lead key
+(`scan:<kind>:<name>@<file>`, listed by `scan`) or a glob over keys, such as
+`scan:infra:*@infra/modules/**`. An entry without `@<file>` matches that lead in
+every file.

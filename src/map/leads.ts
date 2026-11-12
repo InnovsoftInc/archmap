@@ -1,43 +1,79 @@
 // Leads: things the scanner saw in the code that the map doesn't yet cover.
 
+import { matchesGlob } from "node:path";
 import type { Scan } from "../scan/index.ts";
 import { evidenceOf } from "./evidence.ts";
 import type { Doc } from "./types.ts";
 
 export type Lead = { key: string; file: string; text: string };
 
-export const leadsOf = (s: Scan): Lead[] => [
+type Raw = { kind: string; name: string; file: string; text: string };
+
+// A lead's key is `scan:<kind>:<name>@<file>`: the same name in two files
+// (an `api` service in two compose files) is two leads.
+const rawLeads = (s: Scan): Raw[] => [
   ...s.apps.map((a) => ({
-    key: `scan:app:${a.path}`,
+    kind: "app",
+    name: a.path,
     file: a.file,
     text: `app ${a.name} at ${a.path}`,
   })),
   ...s.routes.map((r) => ({
-    key: `scan:route:${r.method} ${r.path}`,
+    kind: "route",
+    name: `${r.method} ${r.path}`,
     file: r.file,
     text: `route ${r.method} ${r.path}`,
   })),
   ...s.tables.map((t) => ({
-    key: `scan:table:${t.name}`,
+    kind: "table",
+    name: t.name,
     file: t.file,
     text: `table ${t.name}`,
   })),
   ...s.outside.map((o) => ({
-    key: `scan:outside:${o.name}`,
+    kind: "outside",
+    name: o.name,
     file: o.file,
     text: `outside service ${o.name}`,
   })),
   ...s.infra.map((i) => ({
-    key: `scan:infra:${i.type}:${i.name}`,
+    kind: "infra",
+    name: `${i.type}:${i.name}`,
     file: i.file,
     text: `${i.kind} ${i.type} ${i.name}`,
   })),
   ...s.ci.map((c) => ({
-    key: `scan:ci:${c.workflow}`,
+    kind: "ci",
+    name: c.workflow,
     file: c.file,
     text: `CI workflow ${c.workflow}`,
   })),
 ];
+
+const unkeyed = (r: Raw): string => `scan:${r.kind}:${r.name}`;
+const toLead = (r: Raw): Lead => ({
+  key: `${unkeyed(r)}@${r.file}`,
+  file: r.file,
+  text: r.text,
+});
+
+export const leadsOf = (s: Scan): Lead[] => rawLeads(s).map(toLead);
+
+const globMatches = (key: string, pattern: string): boolean => {
+  try {
+    return matchesGlob(key, pattern);
+  } catch {
+    return false;
+  }
+};
+
+// An ignore entry is a key or a glob over keys (`scan:infra:*@infra/**`). An
+// entry without `@<file>` matches the lead in every file.
+const ignored = (r: Raw, key: string, ignore: string[]): boolean =>
+  ignore.some((pattern) => {
+    const target = pattern.includes("@") ? key : unkeyed(r);
+    return pattern === target || globMatches(target, pattern);
+  });
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string | undefined =>
@@ -91,30 +127,36 @@ export const unconfirmedLeads = (
       .flatMap((d) => [d.id, str(d.data.name)])
       .flatMap((n) => (n ? [n.toLowerCase()] : [])),
   );
-  const apps = new Map(s.apps.map((a) => [`scan:app:${a.path}`, a.path]));
-  const routeOf = new Map(
-    s.routes.map((r) => [
-      `scan:route:${r.method} ${r.path}`,
-      normalizeRoute(r.method, r.path),
-    ]),
-  );
-  const confirmed = (lead: Lead): boolean => {
+  // Infrastructure, Docker and CI leads are also confirmed by a code entry
+  // that is the lead's file or a folder above it.
+  const coversFile = (file: string): boolean =>
+    codes.some((c) => {
+      if (c === undefined) return false;
+      const folder = c.replace(/\/+$/, "");
+      return (
+        folder !== "." &&
+        folder !== "" &&
+        (file === folder || file.startsWith(`${folder}/`))
+      );
+    });
+  const confirmed = (lead: Raw): boolean => {
     if (evidenceFiles.has(lead.file)) return true;
-    const [, kind, ...rest] = lead.key.split(":");
-    const name = rest.join(":");
-    if (kind === "app") {
-      const path = apps.get(lead.key) ?? name;
+    const { kind, name } = lead;
+    if (kind === "app")
       return codes.some(
         (c) =>
           c !== undefined &&
-          (c === path || (path !== "." && c.startsWith(`${path}/`))),
+          (c === name || (name !== "." && c.startsWith(`${name}/`))),
       );
-    }
-    if (kind === "route") return routes.has(routeOf.get(lead.key) ?? "");
+    if (kind === "route") return routes.has(normalizeRouteText(name));
     if (kind === "table") return tables.has(name);
     if (kind === "outside") return external.has(name.toLowerCase());
+    if (kind === "infra" || kind === "ci") return coversFile(lead.file);
     return false;
   };
-  const skip = new Set(ignore);
-  return leadsOf(s).filter((l) => !skip.has(l.key) && !confirmed(l));
+  return rawLeads(s).flatMap((r) => {
+    const lead = toLead(r);
+    return ignored(r, lead.key, ignore) || confirmed(r) ? [] : [lead];
+  });
 };
+

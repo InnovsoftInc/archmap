@@ -107,7 +107,7 @@ const main = async (argv: string[]): Promise<void> => {
     case "scan": {
       const leads = leadsOf(scan(projectRoot()));
       if (values.json) console.log(JSON.stringify(leads, null, 2));
-      else leads.forEach((l) => console.log(`${l.key}  ${l.file}`));
+      else leads.forEach((l) => console.log(l.key));
       return;
     }
   }
