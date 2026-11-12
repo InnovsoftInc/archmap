@@ -1,6 +1,5 @@
 // archmap viewer: the map's UI. It reads data.json (written by `archmap build`, or served
-// fresh by `archmap dev`) and replays saves with core.js, the same code the CLI uses.
-import * as core from "./core.js";
+// fresh by `archmap dev`), which carries the map's model, each doc's text and the check results.
 
 var STORE = "archmap-pos-v1";
 var W = 248,
@@ -33,22 +32,8 @@ function esc(s) {
     }[c];
   });
 }
-function clone(o) {
-  return o == null ? o : JSON.parse(JSON.stringify(o));
-}
 function same(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
-}
-function fmtDate(iso) {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch (e) {
-    return iso;
-  }
 }
 function zvar(area) {
   return "var(--z-" + area + ", var(--z-records))";
@@ -57,113 +42,32 @@ function lvar(lane) {
   return "var(--l-" + lane + ", var(--l-platform))";
 }
 
-// ---------- data: saves (batches of changes) and sprints (published versions)
-var SAVES = [],
-  SPRINTS = [],
-  PROTOCOL = "",
-  loaded = { saves: false, sprints: false },
+// ---------- data: the model, each doc's text (HTML) and what `archmap check` found
+var MODEL = null,
+  DOCS = {},
+  CHECK = { errors: [], warnings: [] },
+  README = "",
+  PUBLIC = false,
   CONFIG = { name: "Architecture map" },
   LABELS = {};
-var models = {};
 
-function sortedSaves() {
-  return SAVES.slice().sort(function (a, b) {
-    return a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1;
-  });
-}
-function versions() {
-  var list = [],
-    cum = {};
-  SPRINTS.slice()
-    .sort(function (a, b) {
-      return a.published_at < b.published_at ? -1 : 1;
-    })
-    .forEach(function (s) {
-      (s.saves || []).forEach(function (id) {
-        cum[id] = true;
-      });
-      list.push({
-        key: "s:" + s.id,
-        name: s.name,
-        sprint: s,
-        set: Object.assign({}, cum),
-      });
-    });
-  var draftIds = SAVES.filter(function (s) {
-    return !cum[s.id];
-  }).map(function (s) {
-    return s.id;
-  });
-  if (draftIds.length) {
-    var all = Object.assign({}, cum);
-    draftIds.forEach(function (id) {
-      all[id] = true;
-    });
-    list.push({
-      key: "draft",
-      name: "Draft (not published)",
-      draft: true,
-      set: all,
-      draftIds: draftIds,
-    });
-  }
-  return list;
-}
-function cmpPair() {
-  if (!cmpKey) return null;
-  var keys = versions().map(function (v) {
-      return v.key;
-    }),
-    iv = keys.indexOf(verKey),
-    ic = keys.indexOf(cmpKey);
-  return ic <= iv
-    ? { before: cmpKey, after: verKey }
-    : { before: verKey, after: cmpKey };
-}
-function findVersion(key) {
-  return (
-    versions().filter(function (v) {
-      return v.key === key;
-    })[0] || null
-  );
-}
-
-// Replay comes from core.js, the same code the CLI runs.
 function emptyModel() {
-  return core.emptyModel();
-}
-function applyOp(m, op, save) {
-  core.applyOp(m, op, save);
-}
-function model(key) {
-  if (!key) return null;
-  if (models[key]) return models[key];
-  var v = findVersion(key);
-  if (!v) return null;
-  var m = emptyModel();
-  sortedSaves().forEach(function (s) {
-    if (v.set[s.id])
-      (s.ops || []).forEach(function (op) {
-        applyOp(m, op, s);
-      });
-  });
-  models[key] = m;
-  return m;
-}
-function savesBetween(fromKey, toKey) {
-  var a = fromKey ? findVersion(fromKey) : null,
-    b = findVersion(toKey);
-  if (!b) return [];
-  return sortedSaves().filter(function (s) {
-    return b.set[s.id] && !(a && a.set[s.id]);
-  });
+  return {
+    categories: {},
+    areas: {},
+    tables: {},
+    enums: {},
+    services: {},
+    connections: {},
+    personas: {},
+    flows: {},
+    problems: [],
+  };
 }
 
 // ---------- UI state
 var view = "arch",
   path = [],
-  verKey = null,
-  cmpKey = "",
   sel = null,
   per = null,
   hov = null,
@@ -193,76 +97,23 @@ var vp = $("vp"),
   panel = $("panel");
 var NS = "http://www.w3.org/2000/svg";
 
-// ---------- view model: current version, plus removed items from the compared version
+// ---------- view model: the map's model, shaped for drawing
 var VM = null;
-function status(a, b, cmp) {
-  if (!cmp) return "";
-  if (a && !b) return "removed";
-  if (!a && b) return "added";
-  return same(a, b) ? "" : "changed";
-}
 function buildVM() {
-  var pr = cmpPair(),
-    B = model(pr ? pr.after : verKey) || emptyModel(),
-    A = pr ? model(pr.before) : null,
-    cmp = !!A;
-  A = A || emptyModel();
+  var B = MODEL || emptyModel();
   var vm = {
     B: B,
-    A: A,
-    cmp: cmp,
     tables: [],
     services: [],
     conns: [],
     edges: [],
     areas: {},
   };
-  var names = Object.keys(B.tables);
-  if (cmp)
-    Object.keys(A.tables).forEach(function (n) {
-      if (!B.tables[n]) names.push(n);
+  Object.keys(B.tables).forEach(function (n) {
+    var t = B.tables[n];
+    var cols = (t.columns || []).map(function (c) {
+      return { c: c, st: "" };
     });
-  names.forEach(function (n) {
-    var tb = B.tables[n],
-      ta = cmp ? A.tables[n] : null,
-      base = tb || ta;
-    var st = cmp ? (!ta ? "added" : !tb ? "removed" : "") : "";
-    var cols = [];
-    if (st || !cmp)
-      cols = base.columns.map(function (c) {
-        return { c: c, st: "" };
-      });
-    else {
-      tb.columns.forEach(function (c) {
-        var o = ta.columns.filter(function (x) {
-          return x.name === c.name;
-        })[0];
-        cols.push({
-          c: c,
-          st: !o ? "added" : same(o, c) ? "" : "changed",
-          old: o,
-        });
-      });
-      ta.columns.forEach(function (c) {
-        if (
-          !tb.columns.some(function (x) {
-            return x.name === c.name;
-          })
-        )
-          cols.push({ c: c, st: "removed" });
-      });
-      var pa = clone(ta),
-        pb = clone(tb);
-      delete pa.columns;
-      delete pb.columns;
-      if (
-        !same(pa, pb) ||
-        cols.some(function (x) {
-          return x.st;
-        })
-      )
-        st = "changed";
-    }
     var hasId = cols.some(function (x) {
       return x.c.name === "id";
     });
@@ -279,17 +130,15 @@ function buildVM() {
       });
     vm.tables.push({
       name: n,
-      t: base,
-      st: st,
+      t: t,
+      st: "",
       cols: cols,
       h: HEAD + cols.length * ROW + FOOT + 2,
     });
   });
-  Object.keys(B.areas)
-    .concat(cmp ? Object.keys(A.areas) : [])
-    .forEach(function (id) {
-      vm.areas[id] = B.areas[id] || A.areas[id];
-    });
+  Object.keys(B.areas).forEach(function (id) {
+    vm.areas[id] = B.areas[id];
+  });
   vm.T = {};
   vm.tables.forEach(function (t) {
     vm.T[t.name] = t;
@@ -297,69 +146,28 @@ function buildVM() {
   vm.tables.forEach(function (t) {
     t.cols.forEach(function (x, i) {
       if (x.c.fk && vm.T[x.c.fk])
-        vm.edges.push({
-          s: t.name,
-          si: i,
-          t: x.c.fk,
-          col: x.c.name,
-          st:
-            t.st === "removed" || x.st === "removed"
-              ? "removed"
-              : t.st === "added" || x.st === "added"
-                ? "added"
-                : "",
-        });
+        vm.edges.push({ s: t.name, si: i, t: x.c.fk, col: x.c.name, st: "" });
     });
   });
-  var sids = Object.keys(B.services);
-  if (cmp)
-    Object.keys(A.services).forEach(function (n) {
-      if (!B.services[n]) sids.push(n);
-    });
-  sids.forEach(function (id) {
-    vm.services.push({
-      id: id,
-      s: B.services[id] || A.services[id],
-      st: status(cmp ? A.services[id] : B.services[id], B.services[id], cmp),
-    });
+  Object.keys(B.services).forEach(function (id) {
+    vm.services.push({ id: id, s: B.services[id], st: "" });
   });
   vm.S = {};
   vm.services.forEach(function (s) {
     vm.S[s.id] = s;
   });
-  var cids = Object.keys(B.connections);
-  if (cmp)
-    Object.keys(A.connections).forEach(function (n) {
-      if (!B.connections[n]) cids.push(n);
-    });
-  cids.forEach(function (id) {
-    var c = B.connections[id] || A.connections[id];
-    if (vm.S[c.from] && vm.S[c.to])
-      vm.conns.push({
-        id: id,
-        c: c,
-        st: status(
-          cmp ? A.connections[id] : B.connections[id],
-          B.connections[id],
-          cmp,
-        ),
-      });
+  Object.keys(B.connections).forEach(function (id) {
+    var c = B.connections[id];
+    if (vm.S[c.from] && vm.S[c.to]) vm.conns.push({ id: id, c: c, st: "" });
   });
   var catIds = Object.keys(B.categories);
-  if (cmp)
-    Object.keys(A.categories).forEach(function (n) {
-      if (!B.categories[n]) catIds.push(n);
-    });
   if (catIds.length)
     vm.cats = catIds.map(function (id) {
+      // The "outside" lane holds external systems: drawn below the boundary.
       return {
         id: id,
-        c: B.categories[id] || A.categories[id],
-        st: status(
-          cmp ? A.categories[id] : B.categories[id],
-          B.categories[id],
-          cmp,
-        ),
+        c: Object.assign({ external: id === "outside" }, B.categories[id]),
+        st: "",
       };
     });
   else
@@ -385,12 +193,7 @@ function buildVM() {
           if (j.t[n] === "w" || !tables[n]) tables[n] = j.t[n];
         });
       });
-      return {
-        id: id,
-        p: p,
-        tables: tables,
-        st: status(cmp ? A.personas[id] : B.personas[id], B.personas[id], cmp),
-      };
+      return { id: id, p: p, tables: tables, st: "" };
     });
   vm.PER = {};
   vm.personas.forEach(function (x) {
@@ -399,18 +202,9 @@ function buildVM() {
   vm.actors = vm.personas.filter(function (x) {
     return (x.p.uses || []).length;
   });
-  var fids = Object.keys(B.flows);
-  if (cmp)
-    Object.keys(A.flows).forEach(function (n) {
-      if (!B.flows[n]) fids.push(n);
-    });
-  vm.flows = fids
+  vm.flows = Object.keys(B.flows)
     .map(function (id) {
-      return {
-        id: id,
-        f: B.flows[id] || A.flows[id],
-        st: status(cmp ? A.flows[id] : B.flows[id], B.flows[id], cmp),
-      };
+      return { id: id, f: B.flows[id], st: "" };
     })
     .sort(function (a, b) {
       return (a.f.order || 0) - (b.f.order || 0);
@@ -418,27 +212,6 @@ function buildVM() {
   vm.FL = {};
   vm.flows.forEach(function (x) {
     vm.FL[x.id] = x;
-  });
-  vm.flows.forEach(function (x) {
-    if (!B.flows[x.id]) return;
-    (x.f.steps || []).forEach(function (st, i) {
-      [st.from, st.to].forEach(function (n) {
-        if (!n) return;
-        var ok =
-          n.indexOf("persona:") === 0
-            ? !!B.personas[n.slice(8)]
-            : !!B.services[n];
-        if (
-          !ok &&
-          B.problems.indexOf(
-            "Flow " + x.id + " step " + (i + 1) + ": " + n + " doesn't exist",
-          ) === -1
-        )
-          B.problems.push(
-            "Flow " + x.id + " step " + (i + 1) + ": " + n + " doesn't exist",
-          );
-      });
-    });
   });
   VM = vm;
 }
@@ -927,11 +700,18 @@ function emptyState(key, cls) {
     "</p></div>"
   );
 }
+// How much each layer of the map holds; an empty layer shows its empty state.
 function layerCount(name) {
-  var r = core.layerReport(VM.B).filter(function (l) {
-    return l.layer === name;
-  })[0];
-  return r ? r.count : 0;
+  var all = VM.services,
+    parts = all.filter(function (x) {
+      return x.s.parent;
+    }).length;
+  if (name === "overview") return all.length - parts;
+  if (name === "parts") return parts;
+  if (name === "data") return VM.tables.length;
+  if (name === "people")
+    return Object.keys(VM.B.personas).length + Object.keys(VM.B.flows).length;
+  return 0;
 }
 function showCanvasEmpty(key) {
   var old = vp.querySelector(".empty-state.canvas");
@@ -1031,7 +811,6 @@ function renderSchema() {
       keyBadges(t.st) +
       (t.t.append ? '<span class="badge">append-only</span>' : "") +
       "</div>";
-    var mB = t.st === "removed" ? vm.A : vm.B;
     t.cols.forEach(function (x, i) {
       var c = x.c,
         key = "<span></span>";
@@ -1043,7 +822,7 @@ function renderSchema() {
           '">FK</span>';
       else if (c.unique) key = '<span class="k u">U</span>';
       else if (c.enum) key = '<span class="k en">E</span>';
-      var ty = colType(c, x.st === "removed" ? vm.A : mB);
+      var ty = colType(c, vm.B);
       var tip =
         c.name +
         " · " +
@@ -1117,14 +896,7 @@ function renderArch() {
         .sort(function (a, b) {
           return (a.s.order || 0) - (b.s.order || 0);
         });
-      var st =
-        c.st ||
-        (vm.cmp &&
-        vm.services.some(function (x) {
-          return x.st && catOf(x.id) === c.id;
-        })
-          ? "changed"
-          : "");
+      var st = c.st;
       var el = document.createElement("div"),
         k = "cat:" + c.id;
       el.className =
@@ -1213,20 +985,6 @@ function renderArch() {
         })
       )
         g.g.classList.add("planned");
-      if (
-        vm.cmp &&
-        x.list.every(function (c) {
-          return c.st === "added";
-        })
-      )
-        g.g.classList.add("added");
-      if (
-        vm.cmp &&
-        x.list.every(function (c) {
-          return c.st === "removed";
-        })
-      )
-        g.g.classList.add("removed");
       var t = document.createElementNS(NS, "title");
       t.textContent = x.list
         .map(function (c) {
@@ -1384,24 +1142,9 @@ function stepOk(st) {
     a = st.from,
     b = st.to;
   if (!b || a === b) return true;
-  if (a.indexOf("persona:") === 0) {
-    var p = vm.PER[a.slice(8)];
-    return (
-      !!p &&
-      (p.p.uses || []).some(function (u) {
-        return u.to === b;
-      })
-    );
-  }
-  if (b.indexOf("persona:") === 0) {
-    var q = vm.PER[b.slice(8)];
-    return (
-      !!q &&
-      (q.p.uses || []).some(function (u) {
-        return u.to === a;
-      })
-    );
-  }
+  // A person isn't on the map's connections: their step only needs the persona to exist.
+  if (a.indexOf("persona:") === 0) return !!vm.PER[a.slice(8)];
+  if (b.indexOf("persona:") === 0) return !!vm.PER[b.slice(8)];
   return vm.conns.some(function (c) {
     return (c.c.from === a && c.c.to === b) || (c.c.from === b && c.c.to === a);
   });
@@ -2003,7 +1746,9 @@ function openFlow(id) {
   if (!x) return;
   var steps = x.f.steps || [],
     cur = steps[flowStep] || {};
-  var b = '<p class="lead">' + esc(x.f.description || "") + "</p>";
+  var b = DOCS[id]
+    ? docBlocks(id)
+    : '<p class="lead">' + esc(x.f.description || "") + "</p>";
   b +=
     '<div class="stepper"><button type="button" class="tbtn" id="fPrev"' +
     (flowStep <= 0 ? " disabled" : "") +
@@ -2095,134 +1840,35 @@ function stepTo(i) {
 }
 
 // ---------- header, chips, legend
-function versionLabel(v) {
-  if (!v) return "";
-  if (v.draft)
-    return (
-      "Draft · " +
-      v.draftIds.length +
-      " unpublished save" +
-      (v.draftIds.length === 1 ? "" : "s")
-    );
-  return v.name + " · " + fmtDate(v.sprint.published_at);
+function problemCount() {
+  return CHECK.errors.length + CHECK.warnings.length;
 }
 function renderChrome() {
-  var vs = versions(),
-    ver = $("ver"),
-    cmp = $("cmp");
-  var latest = vs
-    .filter(function (v) {
-      return !v.draft;
-    })
-    .slice(-1)[0];
-  ver.innerHTML = vs
-    .slice()
-    .reverse()
-    .map(function (v) {
-      return (
-        '<option value="' +
-        esc(v.key) +
-        '">' +
-        esc(versionLabel(v)) +
-        (latest && v.key === latest.key ? " (current)" : "") +
-        "</option>"
-      );
-    })
-    .join("");
-  ver.value = verKey || "";
-  cmp.innerHTML =
-    '<option value="">No comparison</option>' +
-    vs
-      .slice()
-      .reverse()
-      .filter(function (v) {
-        return v.key !== verKey;
-      })
-      .map(function (v) {
-        return (
-          '<option value="' +
-          esc(v.key) +
-          '">' +
-          esc(versionLabel(v)) +
-          "</option>"
-        );
-      })
-      .join("");
-  cmp.value = cmpKey;
   renderCrumbs();
   $("chips").hidden = view !== "schema";
   $("fadeWrap").hidden = view !== "schema";
   $("bEnums").hidden = view !== "schema";
   $("personas").hidden = view !== "schema";
-  $("cmpNote").hidden = !cmpKey;
-  $("cmpWrap").hidden = !(cmpKey || cmpOpen);
-  $("bCmp").textContent = cmpKey || cmpOpen ? "Stop comparing" : "Compare";
-  $("bCmp").setAttribute("aria-expanded", String(!!(cmpKey || cmpOpen)));
-  var draft = vs.filter(function (v) {
-    return v.draft;
-  })[0];
   var B = VM.B,
-    cur = findVersion(verKey),
-    sub;
-  var counts =
-    Object.keys(B.services).length +
+    n = problemCount(),
+    tops = VM.services.filter(function (x) {
+      return !x.s.parent;
+    }).length;
+  var sub =
+    tops +
     " services · " +
     Object.keys(B.tables).length +
     " tables · " +
-    Object.keys(B.enums).length +
-    " enums";
-  if (!cur) sub = "No versions yet.";
-  else if (cmpKey) {
-    var pr = cmpPair(),
-      n = savesBetween(pr.before, pr.after).length;
-    sub =
-      "Changes from " +
-      esc(versionLabel(findVersion(pr.before))) +
-      " to " +
-      esc(versionLabel(findVersion(pr.after))) +
-      ' · <button type="button" id="subChanges">' +
-      n +
-      " save" +
-      (n === 1 ? "" : "s") +
-      "</button>";
-  } else {
-    var idx = vs
-        .map(function (v) {
-          return v.key;
-        })
-        .indexOf(verKey),
-      prev = idx > 0 ? vs[idx - 1] : null;
-    sub =
-      esc(versionLabel(cur)) +
-      " · " +
-      counts +
-      (prev
-        ? ' · <button type="button" id="subWhat">What changed since ' +
-          esc(prev.name) +
-          "</button>"
-        : "");
-  }
-  if (B.problems.length)
+    Object.keys(B.flows).length +
+    (Object.keys(B.flows).length === 1 ? " flow" : " flows");
+  if (n)
     sub +=
       ' · <button type="button" id="subProb">' +
-      B.problems.length +
+      n +
       " problem" +
-      (B.problems.length === 1 ? "" : "s") +
+      (n === 1 ? "" : "s") +
       "</button>";
   $("sub").innerHTML = sub;
-  if ($("subChanges")) $("subChanges").onclick = openChanges;
-  if ($("subWhat"))
-    $("subWhat").onclick = function () {
-      var vs2 = versions(),
-        i = vs2
-          .map(function (v) {
-            return v.key;
-          })
-          .indexOf(verKey);
-      cmpKey = vs2[i - 1].key;
-      render();
-      openChanges();
-    };
   if ($("subProb")) $("subProb").onclick = openProblems;
 
   var chips = $("chips");
@@ -2350,12 +1996,9 @@ function navLabel(st) {
       table: st.id,
       service: VM && VM.S[st.id] ? VM.S[st.id].s.name : st.id,
       persona: VM && VM.PER[st.id] ? VM.PER[st.id].p.name : st.id,
-      changes: "Changes",
       enums: "Enum types",
       flows: "Flows",
       flow: VM && VM.FL[st.id] ? VM.FL[st.id].f.name : "Flow",
-      how: "How to update",
-      publish: "Publish sprint",
       problems: "Problems",
     }[st.type] || "previous"
   );
@@ -2385,8 +2028,7 @@ function goBack() {
     } else if (st.type === "enums") {
       if (view !== "schema") setView("schema");
       openEnums(st.id);
-    } else if (st.type === "changes") openChanges();
-    else if (st.type === "flows") openFlows();
+    } else if (st.type === "flows") openFlows();
     else if (st.type === "flow") {
       if (view !== "flow" || flowId !== st.id) {
         flowId = st.id;
@@ -2396,8 +2038,7 @@ function goBack() {
         fitAll();
       }
       openFlow(st.id);
-    } else if (st.type === "how") openHow();
-    else if (st.type === "problems") openProblems();
+    } else if (st.type === "problems") openProblems();
   } finally {
     restoring = false;
   }
@@ -2412,7 +2053,7 @@ function goTo(ref) {
     id = id.split(".")[0];
   }
   if (kind === "connection") {
-    var c = VM.B.connections[id] || VM.A.connections[id];
+    var c = VM.B.connections[id];
     if (!c) return;
     kind = "service";
     id = c.from;
@@ -2451,6 +2092,30 @@ function goTo(ref) {
   if (kind === "area") {
     if (view !== "schema") setView("schema");
   }
+}
+// A doc's text: the summary, "How it works", and "For developers" with its code paths.
+// The text is HTML that `archmap build` rendered from the doc's markdown.
+function docBlocks(id) {
+  var d = DOCS[id];
+  if (!d) return "";
+  var code = d.code || [],
+    b = d.summary ? '<div class="doc lead">' + d.summary + "</div>" : "";
+  if (d.how) b += '<h3>How it works</h3><div class="doc">' + d.how + "</div>";
+  if (d.dev || code.length)
+    b +=
+      '<section class="doc-dev"><h3>For developers</h3>' +
+      (d.dev ? '<div class="doc">' + d.dev + "</div>" : "") +
+      (code.length
+        ? '<ul class="code">' +
+          code
+            .map(function (c) {
+              return "<li><code>" + esc(c) + "</code></li>";
+            })
+            .join("") +
+          "</ul>"
+        : "") +
+      "</section>";
+  return b;
 }
 function linkBtn(ref, title, sub, z) {
   return (
@@ -2565,13 +2230,12 @@ function openTable(name) {
   b += "<h3>Columns</h3>";
   t.cols.forEach(function (x) {
     var c = x.c,
-      m = x.st === "removed" || t.st === "removed" ? vm.A : vm.B,
+      m = vm.B,
       tags = [];
     if (c.pk) tags.push("primary key");
     if (c.unique) tags.push("unique");
     if (c.fk) tags.push("→ " + c.fk);
-    var en = c.enum ? m.enums[c.enum] || {} : null,
-      oldEn = c.enum && vm.cmp ? vm.A.enums[c.enum] : null;
+    var en = c.enum ? m.enums[c.enum] || {} : null;
     b +=
       '<div class="col' +
       (x.st ? " " + x.st : "") +
@@ -2587,28 +2251,10 @@ function openTable(name) {
         '<div class="chips">' +
         en.values
           .map(function (v) {
-            return (
-              "<span" +
-              (oldEn && oldEn.values.indexOf(v) === -1 ? ' class="add"' : "") +
-              ">" +
-              esc(v) +
-              "</span>"
-            );
+            return "<span>" + esc(v) + "</span>";
           })
           .join("") +
-        (oldEn
-          ? oldEn.values
-              .filter(function (v) {
-                return en.values.indexOf(v) === -1;
-              })
-              .map(function (v) {
-                return '<span class="del">' + esc(v) + "</span>";
-              })
-              .join("")
-          : "") +
         "</div>";
-    if (x.st === "changed" && x.old)
-      b += '<p class="small">Changed from: ' + esc(diffText(x.old, c)) + "</p>";
     b += "</div>";
   });
   b +=
@@ -2618,40 +2264,33 @@ function openTable(name) {
       '<div class="col"><div class="cl1"><code>updated_at</code><span class="t">timestamptz</span></div><p>Last change; doubles as the edit-conflict check.</p></div>';
   showPanel(esc(name), b, true, { type: "table", id: name });
 }
-function diffText(a, b) {
-  var out = [];
-  Object.keys(Object.assign({}, a, b)).forEach(function (k) {
-    if (!same(a[k], b[k]))
-      out.push(
-        k +
-          ": " +
-          (a[k] === undefined ? "–" : JSON.stringify(a[k])) +
-          " → " +
-          (b[k] === undefined ? "–" : JSON.stringify(b[k])),
-      );
-  });
-  return out.join("; ");
-}
 function openService(id) {
   var x = VM.S[id],
     s = x.s,
     vm = VM;
   var b =
     '<div class="meta"><span class="pill" style="--z:' +
-    lvar(s.lane) +
+    lvar(catOf(id)) +
     '"><i></i>' +
-    esc(
-      (
-        LANES.filter(function (l) {
-          return l.id === s.lane;
-        })[0] || {}
-      ).name || s.lane,
-    ) +
+    esc(catName(catOf(id))) +
     "</span>" +
     (s.status ? '<span class="pill">' + esc(s.status) + "</span>" : "") +
     (x.st ? '<span class="pill">' + x.st + "</span>" : "") +
     "</div>";
-  b += '<p class="lead">' + esc(s.purpose || "") + "</p>";
+  var parent = s.parent && vm.S[s.parent];
+  if (DOCS[id]) b += docBlocks(id);
+  else if (parent)
+    b +=
+      "<h3>Part of</h3>" +
+      '<div class="links">' +
+      linkBtn(
+        "service:" + s.parent,
+        parent.s.name,
+        TYPE_LABEL[stype(parent.s)] || "",
+        lvar(catOf(s.parent)),
+      ) +
+      "</div>";
+  else b += '<p class="lead">' + esc(s.purpose || "") + "</p>";
   if (s.tech)
     b +=
       '<p class="small"><b>' +
@@ -2730,15 +2369,6 @@ function openService(id) {
       setView("schema");
     };
 }
-function opRef(op) {
-  return op.kind + ":" + op.id;
-}
-function sprintOf(saveId) {
-  var s = SPRINTS.filter(function (x) {
-    return (x.saves || []).indexOf(saveId) !== -1;
-  })[0];
-  return s ? s.name : "draft";
-}
 function openPersona(id) {
   var x = VM.PER[id],
     p = x.p,
@@ -2750,9 +2380,8 @@ function openPersona(id) {
     return (j.gap && !j.fix) || j.open;
   }).length;
   var b =
-    '<div class="meta"><span class="pill">' +
-    esc(p.kind || "") +
-    "</span>" +
+    '<div class="meta">' +
+    (p.kind ? '<span class="pill">' + esc(p.kind) + "</span>" : "") +
     (p.who ? '<span class="pill">' + esc(p.who) + "</span>" : "") +
     '<span class="pill">' +
     names.length +
@@ -2761,7 +2390,9 @@ function openPersona(id) {
     '</span><span class="pill">' +
     open +
     " open</span></div>";
-  b += '<p class="lead">' + esc(p.blurb || "") + "</p>";
+  b += DOCS[id]
+    ? docBlocks(id)
+    : '<p class="lead">' + esc(p.blurb || "") + "</p>";
   if (p.subtypes && p.subtypes.length)
     b +=
       "<h3>Subtypes</h3>" +
@@ -2817,12 +2448,7 @@ function openPersona(id) {
 }
 function openEnums(focus) {
   var B = VM.B,
-    A = VM.A,
     names = Object.keys(B.enums);
-  if (VM.cmp)
-    Object.keys(A.enums).forEach(function (n) {
-      if (!B.enums[n]) names.push(n);
-    });
   names.sort();
   var uses = {};
   Object.keys(B.tables).forEach(function (t) {
@@ -2833,46 +2459,22 @@ function openEnums(focus) {
   var b =
     '<p class="lead">Fixed lists of allowed values. <b>Native</b> means a Postgres enum type; <b>check</b> means text with a CHECK constraint. Lists staff edit themselves are lookup tables instead.</p>';
   names.forEach(function (n) {
-    var e = B.enums[n],
-      o = VM.cmp ? A.enums[n] : null,
-      st = status(VM.cmp ? o : e, e, VM.cmp),
-      cur = e || o;
+    var cur = B.enums[n];
     b +=
-      '<div class="col' +
-      (st ? " " + st : "") +
-      '" id="enum-' +
+      '<div class="col" id="enum-' +
       esc(n) +
       '"><div class="cl1"><code>' +
       esc(n) +
       '</code><span class="t">' +
       esc(cur.style || "check") +
-      (o && e && o.style !== e.style
-        ? " (was " + esc(o.style || "check") + ")"
-        : "") +
       "</span></div>";
     b +=
       '<div class="chips">' +
-      cur.values
+      (cur.values || [])
         .map(function (v) {
-          return (
-            "<span" +
-            (o && e && o.values.indexOf(v) === -1 ? ' class="add"' : "") +
-            ">" +
-            esc(v) +
-            "</span>"
-          );
+          return "<span>" + esc(v) + "</span>";
         })
         .join("") +
-      (o && e
-        ? o.values
-            .filter(function (v) {
-              return e.values.indexOf(v) === -1;
-            })
-            .map(function (v) {
-              return '<span class="del">' + esc(v) + "</span>";
-            })
-            .join("")
-        : "") +
       "</div>";
     b +=
       '<div class="chips">' +
@@ -2896,90 +2498,22 @@ function openEnums(focus) {
   if (focus && $("enum-" + focus))
     $("enum-" + focus).scrollIntoView({ block: "center" });
 }
-function opLine(op) {
-  return (
-    '<li><button type="button" data-go="' +
-    esc(opRef(op)) +
-    '"><span class="op ' +
-    op.op +
-    '">' +
-    op.op +
-    "</span><b>" +
-    esc(op.kind + " " + op.id) +
-    "</b><br>" +
-    esc(op.reason || "") +
-    "</button></li>"
-  );
-}
-function saveBlock(s) {
-  return (
-    '<div class="save"><h4>' +
-    esc(s.summary || "Untitled save") +
-    '</h4><div class="by">' +
-    esc(s.author || "Unknown") +
-    " · " +
-    fmtDate(s.at) +
-    " · " +
-    (s.ops || []).length +
-    " change" +
-    ((s.ops || []).length === 1 ? "" : "s") +
-    " · " +
-    esc(sprintOf(s.id)) +
-    "</div><ul>" +
-    (s.ops || []).slice(0, 60).map(opLine).join("") +
-    ((s.ops || []).length > 60
-      ? "<li>… and " + ((s.ops || []).length - 60) + " more</li>"
-      : "") +
-    "</ul></div>"
-  );
-}
-function openChanges() {
-  var pr = cmpPair(),
-    list = pr ? savesBetween(pr.before, pr.after) : savesBetween(null, verKey),
-    cur = findVersion(verKey);
-  var title = pr
-    ? "From " +
-      esc(findVersion(pr.before).name) +
-      " to " +
-      esc(findVersion(pr.after).name)
-    : "Everything in " + esc(cur ? cur.name : "");
-  var b =
-    '<p class="lead">' +
-    (cmpKey
-      ? "Every save between the two versions, oldest first. Click a change to find it on the map."
-      : "Every save that built this version, oldest first. Pick a version under Compare with to see only what changed.") +
-    "</p>";
-  b += list.length
-    ? list.map(saveBlock).join("")
-    : '<p class="small">No changes.</p>';
-  showPanel(title, b, false, { type: "changes" });
-}
 function openProblems() {
+  var line = function (cls) {
+    return function (p) {
+      return (
+        '<p class="note ' + cls + '">' + esc(p.file + ": " + p.message) + "</p>"
+      );
+    };
+  };
   showPanel(
-    "Problems · " + VM.B.problems.length,
-    '<p class="lead">Changes that couldn\'t be applied when this version was rebuilt. Each needs a follow-up save that fixes it.</p>' +
-      VM.B.problems
-        .map(function (p) {
-          return '<p class="note gap">' + esc(p) + "</p>";
-        })
-        .join(""),
+    "Problems · " + problemCount(),
+    '<p class="lead">What <code>archmap check</code> found in the map files. Errors first, then warnings.</p>' +
+      CHECK.errors.map(line("gap")).join("") +
+      CHECK.warnings.map(line("open")).join(""),
     false,
     { type: "problems" },
   );
-}
-function openHow() {
-  var b =
-    '<p class="lead">The map is kept as files in the repo. Claude (or anyone) records a change as a save, it\'s reviewed in a pull request, and each sprint is published as a version.</p>';
-  b +=
-    '<h3>Record a change</h3><p class="small">Ask Claude in the repo, for example: "Record on the architecture map that we added a status column to orders." Claude follows the instructions below and runs <code>archmap check</code>. With the archmap plugin, <code>/archmap:setup</code> drafts the map and <code>/archmap:update</code> records what a branch changed.</p>';
-  b +=
-    '<h3>Publish a version</h3><p class="small">At the end of a sprint run <code>archmap publish "Sprint 2"</code> and merge the pull request.</p>';
-  b +=
-    "<h3>Instructions</h3>" +
-    (PROTOCOL
-      ? '<pre class="proto">' + esc(PROTOCOL) + "</pre>"
-      : '<p class="small">No instructions.md in the architecture folder.</p>');
-  showPanel("How to update", b, false, { type: "how" });
 }
 function activate(key) {
   if (view === "schema") {
@@ -3249,7 +2783,8 @@ $("reset").onclick = function () {
 vp.addEventListener(
   "wheel",
   function (ev) {
-    if (ev.target.closest(".panel, .legend, .controls, .msg div")) return;
+    if (ev.target.closest(".panel, .legend, .controls, .msg div, .start"))
+      return;
     ev.preventDefault();
     var r = vp.getBoundingClientRect(),
       unit = ev.deltaMode === 1 ? 16 : 1,
@@ -3293,7 +2828,7 @@ var pointers = new Map(),
   drag = null,
   pinch = null;
 vp.addEventListener("pointerdown", function (ev) {
-  if (ev.target.closest(".panel, .controls, .legend, .msg div")) return;
+  if (ev.target.closest(".panel, .controls, .legend, .msg div, .start")) return;
   // Stops the browser starting a text selection while the canvas is dragged.
   if (ev.pointerType === "mouse") {
     ev.preventDefault();
@@ -3412,19 +2947,6 @@ document.addEventListener("keydown", function (ev) {
 });
 
 // ---------- header controls
-$("ver").onchange = function () {
-  verKey = $("ver").value;
-  if (cmpKey === verKey) cmpKey = "";
-  panel.hidden = true;
-  sel = null;
-  render();
-};
-$("cmp").onchange = function () {
-  cmpKey = $("cmp").value;
-  render();
-  if (cmpKey) openChanges();
-  else panel.hidden = true;
-};
 $("q").addEventListener("input", function () {
   query = $("q").value.trim().toLowerCase();
   apply();
@@ -3456,34 +2978,6 @@ $("q").addEventListener("keydown", function (ev) {
   centerOn(hit);
 });
 $("fadePerson").onchange = apply;
-var cmpOpen = false;
-$("bCmp").onclick = function () {
-  if (cmpKey || cmpOpen) {
-    cmpOpen = false;
-    cmpKey = "";
-    panel.hidden = true;
-    render();
-  } else {
-    cmpOpen = true;
-    renderChrome();
-    $("cmp").focus();
-  }
-};
-function closeMenu() {
-  $("more").hidden = true;
-  $("bMore").setAttribute("aria-expanded", "false");
-}
-$("bMore").onclick = function (ev) {
-  ev.stopPropagation();
-  var open = $("more").hidden;
-  $("more").hidden = !open;
-  $("bMore").setAttribute("aria-expanded", String(open));
-};
-document.addEventListener("click", function (ev) {
-  if (!ev.target.closest(".menuwrap")) closeMenu();
-});
-$("more").addEventListener("click", closeMenu);
-$("bChanges").onclick = openChanges;
 $("bFlows").onclick = openFlows;
 $("mini").addEventListener("pointerdown", function (ev) {
   miniPan(ev);
@@ -3500,7 +2994,55 @@ $("mini").addEventListener("pointerdown", function (ev) {
 $("bEnums").onclick = function () {
   openEnums();
 };
-$("bHow").onclick = openHow;
+$("bStart").onclick = function () {
+  showStart(true);
+};
+$("startGo").onclick = function () {
+  showStart(false);
+};
+
+// ---------- Start here: the map's README, shown first
+function showStart(on) {
+  $("start").hidden = !on;
+  $("bStart").setAttribute("aria-pressed", String(on));
+  if (on) $("start").scrollTop = 0;
+}
+function renderStart() {
+  $("startBody").innerHTML =
+    README ||
+    "<p>This map has no README.md yet. Add one to the map folder to introduce the system.</p>";
+}
+
+// ---------- Simple / Detailed: Simple hides the "For developers" sections
+var DETAIL = "archmap-detail-v1";
+function setSimple(on, remember) {
+  document.body.classList.toggle("simple", on);
+  $("bSimple").setAttribute("aria-pressed", String(on));
+  $("bDetailed").setAttribute("aria-pressed", String(!on));
+  if (remember)
+    try {
+      localStorage.setItem(DETAIL, on ? "simple" : "detailed");
+    } catch (e) {
+      /* ignore */
+    }
+}
+$("bSimple").onclick = function () {
+  setSimple(true, true);
+};
+$("bDetailed").onclick = function () {
+  setSimple(false, true);
+};
+function initDetail() {
+  $("detail").hidden = PUBLIC;
+  if (PUBLIC) return setSimple(true, false);
+  var saved = null;
+  try {
+    saved = localStorage.getItem(DETAIL);
+  } catch (e) {
+    saved = null;
+  }
+  setSimple(saved === "simple", false);
+}
 
 // ---------- loading
 function showMsg(h, p) {
@@ -3510,31 +3052,13 @@ function showMsg(h, p) {
 }
 var firstFit = false;
 function onData() {
-  if (!loaded.saves || !loaded.sprints) return;
-  models = {};
-  var vs = versions();
-  if (!vs.length) {
-    showMsg(
-      "No versions yet",
-      "Nothing has been recorded. Open How to update and ask Claude to record the baseline.",
-    );
-    buildVM();
-    renderChrome();
-    return;
-  }
   showMsg("");
-  var latest =
-    vs
-      .filter(function (v) {
-        return !v.draft;
-      })
-      .slice(-1)[0] || vs[vs.length - 1];
-  if (!verKey || !findVersion(verKey)) verKey = latest.key;
-  if (cmpKey && !findVersion(cmpKey)) cmpKey = "";
   render();
   if (!firstFit) {
     firstFit = true;
     var h = (location.hash || "").slice(1);
+    // A link to a place on the map goes there; otherwise the README comes first.
+    showStart(!h);
     if (h === "schema") setView("schema");
     requestAnimationFrame(function () {
       fitAll();
@@ -3605,23 +3129,17 @@ function applyBrand(cfg) {
 var rev = null;
 function load(data) {
   applyBrand(data.config);
-  SAVES = data.saves || [];
-  SPRINTS = (data.versions || []).map(function (v) {
-    return {
-      id: v.id,
-      name: v.name,
-      published_at: v.published_at,
-      summary: v.summary,
-      saves: v.saves || [],
-    };
-  });
-  PROTOCOL = data.instructions || "";
-  loaded.saves = loaded.sprints = true;
+  MODEL = data.model || emptyModel();
+  DOCS = data.docs || {};
+  CHECK = {
+    errors: (data.check && data.check.errors) || [],
+    warnings: (data.check && data.check.warnings) || [],
+  };
+  README = data.readme || "";
+  PUBLIC = !!data.public;
   rev = data.rev;
-  if (data.fileErrors && data.fileErrors.length)
-    console.warn(
-      "archmap: some files were skipped:\n" + data.fileErrors.join("\n"),
-    );
+  initDetail();
+  renderStart();
   onData();
 }
 function fetchData() {

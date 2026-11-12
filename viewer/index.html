@@ -28,30 +28,29 @@
             </div>
           </div>
           <span class="hlinks" id="hlinks"></span>
-          <div class="vers">
-            <label class="field" for="ver"
-              >Version
-              <select id="ver"></select
-            ></label>
-            <button type="button" class="tbtn" id="bCmp" aria-expanded="false">
-              Compare
-            </button>
-            <label class="field" for="cmp" id="cmpWrap" hidden
-              >with
-              <select id="cmp"></select
-            ></label>
-            <span class="cmpnote" id="cmpNote" hidden
-              ><span
-                ><span class="sw" style="background: var(--add)"></span
-                >added</span
-              ><span
-                ><span class="sw" style="background: var(--chg)"></span
-                >changed</span
-              ><span
-                ><span class="sw" style="background: var(--del)"></span
-                >removed</span
-              ></span
+          <div class="modes">
+            <button
+              type="button"
+              class="tbtn"
+              id="bStart"
+              aria-pressed="false"
+              aria-controls="start"
             >
+              Start here
+            </button>
+            <div
+              class="seg"
+              id="detail"
+              role="group"
+              aria-label="How much detail"
+            >
+              <button type="button" id="bSimple" aria-pressed="false">
+                Simple
+              </button>
+              <button type="button" id="bDetailed" aria-pressed="true">
+                Detailed
+              </button>
+            </div>
           </div>
         </div>
         <div class="r2">
@@ -74,28 +73,9 @@
             person</label
           >
           <button type="button" class="tbtn" id="bFlows">Flows</button>
-          <div class="menuwrap">
-            <button
-              type="button"
-              class="tbtn"
-              id="bMore"
-              aria-haspopup="true"
-              aria-expanded="false"
-            >
-              More ▾
-            </button>
-            <div class="menu" id="more" role="menu" hidden>
-              <button type="button" role="menuitem" id="bChanges">
-                What changed
-              </button>
-              <button type="button" role="menuitem" id="bEnums" hidden>
-                Enum types
-              </button>
-              <button type="button" role="menuitem" id="bHow">
-                How to update
-              </button>
-            </div>
-          </div>
+          <button type="button" class="tbtn" id="bEnums" hidden>
+            Enum types
+          </button>
         </div>
         <nav class="r3" id="chips" aria-label="Areas"></nav>
         <nav class="r3" id="personas" aria-label="Personas" hidden>
@@ -133,6 +113,16 @@
           aria-label="Minimap: click to move the view"
         ></canvas>
         <aside class="panel" id="panel" hidden aria-live="polite"></aside>
+        <section class="start" id="start" aria-label="Start here" hidden>
+          <article>
+            <div class="doc" id="startBody"></div>
+            <p>
+              <button type="button" class="tbtn primary" id="startGo">
+                Open the map
+              </button>
+            </p>
+          </article>
+        </section>
       </main>
     </div>
     <script type="module" src="app.js"></script>

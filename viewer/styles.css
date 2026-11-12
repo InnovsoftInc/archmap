@@ -1,5 +1,5 @@
 /* archmap viewer. Every colour is a token on :root; a project's archmap.config.json can override them.
-   Layout: a full-bleed pannable canvas (services or tables) under a two-row header with the version bar; details open in a side drawer. */
+   Layout: a full-bleed pannable canvas (services or tables) under a two-row header; details open in a side drawer, and Start here shows the map's README. */
 :root {
   --bg: #eef1f4;
   --dot: #cfd6dd;
@@ -24,6 +24,9 @@
   --l-platform: #6f7780;
   --l-third_party: #b5461f;
   --l-legacy: #7a5aa6;
+  --l-apps: #2d6cdf;
+  --l-services: #6a961c;
+  --l-outside: #b5461f;
   --persona: #b5461f;
   --persona-text: #a33d18;
   --on-persona: #ffffff;
@@ -65,6 +68,9 @@
     --l-platform: #a6abb0;
     --l-third_party: #f08a5d;
     --l-legacy: #a88bd4;
+    --l-apps: #6ea6ff;
+    --l-services: #9cc23f;
+    --l-outside: #f08a5d;
     --persona: #f08a5d;
     --persona-text: #f5a27e;
     --on-persona: #1a0f0a;
@@ -104,6 +110,9 @@
   --l-platform: #a6abb0;
   --l-third_party: #f08a5d;
   --l-legacy: #a88bd4;
+  --l-apps: #6ea6ff;
+  --l-services: #9cc23f;
+  --l-outside: #f08a5d;
   --persona: #f08a5d;
   --persona-text: #f5a27e;
   --on-persona: #1a0f0a;
@@ -162,44 +171,6 @@ button {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 14px;
-}
-.vers {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-}
-.menuwrap {
-  position: relative;
-}
-.menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  min-width: 170px;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  box-shadow: 0 8px 24px rgba(10, 20, 30, 0.14);
-}
-.menu button {
-  border: 0;
-  background: none;
-  text-align: left;
-  padding: 7px 10px;
-  border-radius: 5px;
-  color: var(--fg);
-  font: 13px var(--sans);
-  cursor: pointer;
-}
-.menu button:hover,
-.menu button:focus-visible {
-  background: var(--accent-soft);
-  outline: none;
 }
 .linkbtn {
   border: 0;
@@ -267,14 +238,6 @@ button {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font: 12px var(--sans);
-  color: var(--muted);
-}
-select,
 .search input {
   height: 30px;
   border-radius: 6px;
@@ -284,7 +247,6 @@ select,
   font: 13px var(--sans);
   padding: 0 8px;
 }
-select:focus-visible,
 .search input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -400,21 +362,6 @@ select:focus-visible,
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-.cmpnote {
-  display: inline-flex;
-  gap: 10px;
-  align-items: center;
-  font: 12px var(--sans);
-  color: var(--muted);
-}
-.sw {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  margin-right: 4px;
-  vertical-align: -1px;
-}
 
 .viewport {
   position: relative;
@@ -433,6 +380,7 @@ select:focus-visible,
   -webkit-user-drag: none;
 }
 .viewport .panel,
+.viewport .start,
 .viewport .msg div {
   user-select: text;
   -webkit-user-select: text;
@@ -1414,109 +1362,6 @@ ol.steps .warn {
   background: var(--chg-bg);
   color: var(--chg-fg);
 }
-.save {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-}
-.save h4 {
-  margin: 0;
-  font: 600 13.5px/1.35 var(--sans);
-}
-.save .by {
-  font: 11.5px var(--sans);
-  color: var(--muted);
-  margin-top: 2px;
-}
-.save ul {
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.save li button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: var(--line-soft);
-  border-radius: 5px;
-  padding: 5px 7px;
-  cursor: pointer;
-  color: var(--fg);
-  font: 12.5px/1.4 var(--sans);
-}
-.save li button:hover {
-  background: var(--accent-soft);
-}
-.save li b {
-  font: 600 11.5px var(--mono);
-}
-.op {
-  font: 600 9.5px var(--sans);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-right: 5px;
-}
-.op.add {
-  background: var(--add-bg);
-  color: var(--add-fg);
-}
-.op.remove {
-  background: var(--del-bg);
-  color: var(--del-fg);
-}
-.op.update {
-  background: var(--chg-bg);
-  color: var(--chg-fg);
-}
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-.form label {
-  font: 600 12px var(--sans);
-}
-.form input,
-.form textarea {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
-  font: 13.5px/1.4 var(--sans);
-  padding: 7px 9px;
-}
-.form textarea {
-  min-height: 80px;
-  resize: vertical;
-}
-.form input:focus-visible,
-.form textarea:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-pre.proto {
-  white-space: pre-wrap;
-  font: 12px/1.5 var(--mono);
-  background: var(--line-soft);
-  padding: 10px;
-  border-radius: 6px;
-  max-height: 360px;
-  overflow: auto;
-}
-.status {
-  font: 12.5px var(--sans);
-  color: var(--muted);
-  margin-top: 6px;
-}
 @media (max-width: 720px) {
   .panel {
     top: auto;
@@ -1602,4 +1447,179 @@ pre.proto {
 }
 .panel .empty-state {
   margin: 8px 0;
+}
+
+/* Header: Start here and the Simple / Detailed switch */
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-left: auto;
+}
+.tbtn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg[hidden] {
+  display: none;
+}
+.seg button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--card-head);
+  color: var(--muted);
+  font: 500 12.5px var(--sans);
+  cursor: pointer;
+}
+.seg button + button {
+  border-left: 1px solid var(--line);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--fg);
+  color: var(--card);
+}
+.seg button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* A doc's text, rendered from its markdown. Simple hides "For developers". */
+.doc {
+  font: 14px/1.55 var(--sans);
+  max-width: 62ch;
+  overflow-wrap: break-word;
+}
+.doc > :first-child {
+  margin-top: 0;
+}
+.doc > :last-child {
+  margin-bottom: 0;
+}
+.doc p,
+.doc ul,
+.doc ol,
+.doc pre,
+.doc table,
+.doc blockquote {
+  margin: 0 0 10px;
+}
+.doc ul,
+.doc ol {
+  padding-left: 20px;
+}
+.doc a {
+  color: var(--accent);
+}
+.doc code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--card-head);
+  border: 1px solid var(--line-soft);
+  font: 12.5px var(--mono);
+}
+.doc pre {
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--line-soft);
+  overflow: auto;
+}
+.doc pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.doc table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.doc th,
+.doc td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+}
+.doc blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+.doc h1,
+.doc h2,
+.doc h3,
+.doc h4 {
+  margin: 18px 0 6px;
+  font: 600 15px/1.3 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg);
+}
+.panel .doc.lead {
+  margin: 10px 0 12px;
+}
+ul.code {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+ul.code code {
+  font: 12px var(--mono);
+  color: var(--muted);
+  word-break: break-all;
+}
+.simple .doc-dev {
+  display: none;
+}
+
+/* Start here: the map's README over the canvas */
+.start {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  cursor: auto;
+  background: var(--bg);
+  padding: 32px 16px max(32px, env(safe-area-inset-bottom, 0px));
+}
+.start[hidden] {
+  display: none;
+}
+.start article {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 28px 32px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.start .doc {
+  max-width: none;
+  font-size: 15px;
+}
+.start .doc h1 {
+  margin-top: 0;
+  font-size: 24px;
+}
+.start .doc h2 {
+  font-size: 18px;
+}
+.start article > p {
+  margin: 20px 0 0;
+}
+@media (max-width: 720px) {
+  .start article {
+    padding: 20px 16px;
+  }
 }
