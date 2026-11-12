@@ -1,0 +1,16 @@
+{
+  "archmap": "__VERSION__",
+  "name": "__NAME__",
+  "agent": {
+    "command": "claude -p --permission-mode acceptEdits",
+    "skip": [
+      "**/*.test.*",
+      "**/__tests__/**",
+      "**/*.md",
+      "**/*.lock",
+      "**/pnpm-lock.yaml",
+      "**/package-lock.json"
+    ]
+  },
+  "ignore": []
+}

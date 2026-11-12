@@ -1,0 +1,87 @@
+# Needs the pipeline variable ANTHROPIC_API_KEY (secret), and the build
+# service identity needs Contribute permission on the repo.
+trigger: none
+
+pr:
+  branches:
+    include:
+      - "*"
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  # Not required: an agent updates the map and pushes it to the PR branch.
+  - stage: map
+    jobs:
+      - job: map
+        # skips fork PRs
+        condition: ne(variables['System.PullRequest.IsFork'], 'True')
+        continueOnError: true
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: true
+          - task: NodeTool@0
+            inputs:
+              versionSpec: 24.x
+          # the map job's own commits start with "archmap: "; don't answer them
+          - bash: |
+              git fetch origin "$(System.PullRequest.SourceBranchName)" "$(System.PullRequest.TargetBranchName)"
+              git checkout -B "$(System.PullRequest.SourceBranchName)" "origin/$(System.PullRequest.SourceBranchName)"
+              if [[ "$(git log -1 --format=%s)" == "archmap: "* ]]; then
+                echo "##vso[task.setvariable variable=skip]true"
+              fi
+            displayName: Skip the map job's own commits
+          # the agent that archmap.config.json's agent.command runs; swap this
+          # step to install a different agent
+          - bash: npm install -g @anthropic-ai/claude-code
+            displayName: Install the agent
+            condition: ne(variables.skip, 'true')
+          - bash: __CLI__ agent --base origin/$(System.PullRequest.TargetBranchName) | tee "$(Agent.TempDirectory)/archmap-agent.txt"
+            displayName: Update the map
+            condition: ne(variables.skip, 'true')
+            env:
+              ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+          - bash: |
+              git config user.name "Archmap"
+              git config user.email "archmap@users.noreply.invalid"
+              committed=false
+              last="$(tail -n 1 "$(Agent.TempDirectory)/archmap-agent.txt")"
+              if [ -n "$(git status --porcelain -- __DIR__)" ]; then
+                git add -A -- __DIR__
+                git commit -m "archmap: update map"
+                echo "Map files changed:"
+                git diff --name-only HEAD~1 -- __DIR__
+                committed=true
+              elif [[ "$last" == "No map change: "* ]]; then
+                git commit --allow-empty -m "archmap: no map change" -m "Archmap: none - ${last#No map change: }"
+                committed=true
+              fi
+              if [ "$committed" = true ]; then
+                git push origin "HEAD:refs/heads/$(System.PullRequest.SourceBranchName)"
+                echo "##vso[task.setvariable variable=pushed;isOutput=true]true"
+              fi
+            name: push
+            displayName: Commit and publish the map
+            condition: ne(variables.skip, 'true')
+
+  # Required, no AI: fails the pull request when the map is invalid or the
+  # change touches the architecture without touching the map.
+  - stage: check
+    dependsOn: map
+    # runs whatever the map stage did, except when it pushed: that push
+    # starts a new run, which checks the new head
+    condition: and(always(), ne(dependencies.map.outputs['map.push.pushed'], 'true'))
+    jobs:
+      - job: check
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          - task: NodeTool@0
+            inputs:
+              versionSpec: 24.x
+          - bash: |
+              git fetch origin "$(System.PullRequest.TargetBranchName)"
+              __CLI__ check --base origin/$(System.PullRequest.TargetBranchName)
+            displayName: Check the map
