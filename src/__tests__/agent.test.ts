@@ -112,6 +112,19 @@ describe("archmap agent", () => {
     expect(args[0]).toContain("it's");
   });
 
+  it("passes $ patterns in the brief through {brief} verbatim", () => {
+    config({
+      command: `${node(
+        `require("node:fs").writeFileSync("architecture/brief-seen.txt", process.argv[1])`,
+      )} {brief}`,
+    });
+    // A broken map file whose name holds every replacement pattern puts them into the brief.
+    const name = "a$&b$'c$`d$$e.md";
+    write(`architecture/services/${name}`, "---\nstatus: nope\n---\nx\n");
+    runAgent(root, dir(), {});
+    expect(read("architecture/brief-seen.txt")).toContain(name);
+  });
+
   it("keeps map edits and reverts new edits outside the map", () => {
     const r = runAgent(root, dir(), {});
     expect(read("architecture/services/x.md")).toBe(SERVICE);

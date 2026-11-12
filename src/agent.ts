@@ -104,7 +104,9 @@ export const runAgent = (
   const before = dirtyState(root);
   const substituted = command.includes("{brief}");
   const run = spawnSync(
-    substituted ? command.replaceAll("{brief}", shellQuote(text)) : command,
+    substituted
+      ? command.replaceAll("{brief}", () => shellQuote(text))
+      : command,
     {
       shell: true,
       cwd: root,
