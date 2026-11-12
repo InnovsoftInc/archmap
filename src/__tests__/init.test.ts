@@ -13,10 +13,18 @@ import { HOME_REPO, VERSION } from "../home.ts";
 import { init } from "../init.ts";
 
 let root: string;
+// The test folders sit inside archmap's own checkout; stop git there so
+// init never reads archmap's origin/HEAD.
+const ceiling = process.env.GIT_CEILING_DIRECTORIES;
 beforeEach(() => {
+  process.env.GIT_CEILING_DIRECTORIES = import.meta.dirname;
   root = mkdtempSync(join(import.meta.dirname, ".tmp-"));
 });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+  if (ceiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+  else process.env.GIT_CEILING_DIRECTORIES = ceiling;
+  rmSync(root, { recursive: true, force: true });
+});
 
 const read = (...p: string[]) => readFileSync(join(root, ...p), "utf8");
 const CLI = `npx -y github:${HOME_REPO}#v${VERSION}`;
@@ -55,10 +63,12 @@ describe("init", () => {
   it("is idempotent: a second run keeps the config and replaces, not duplicates, the AGENTS block", () => {
     init(root, { name: "A" });
     const cfg = join(root, "architecture", "archmap.config.json");
-    writeFileSync(cfg, '{"name":"Mine"}');
+    writeFileSync(cfg, '{"name":"Mine","base":"main"}');
     writeFileSync(join(root, "architecture", "README.md"), "mine");
     const r = init(root, { name: "B" });
-    expect(read("architecture", "archmap.config.json")).toBe('{"name":"Mine"}');
+    expect(read("architecture", "archmap.config.json")).toBe(
+      '{"name":"Mine","base":"main"}',
+    );
     expect(read("architecture", "README.md")).toBe("mine");
     expect(r.lines.join("\n")).toMatch(/kept/i);
     expect(read("AGENTS.md").split("<!-- archmap:start -->")).toHaveLength(2);
@@ -133,6 +143,20 @@ describe("init", () => {
     init(root, { base: "staging" });
     expect(cfg().base).toBe("staging");
     expect(read("AGENTS.md")).toContain(`${CLI} brief --base staging`);
+  });
+
+  it("writes the detected base into an existing config that lacks one", () => {
+    mkdirSync(join(root, "architecture"));
+    const cfg = join(root, "architecture", "archmap.config.json");
+    writeFileSync(cfg, '{"name":"x"}');
+    const r = init(root, {});
+    expect(JSON.parse(read("architecture", "archmap.config.json"))).toEqual({
+      name: "x",
+      base: "main",
+    });
+    expect(r.lines).toContain(
+      "Set base to main in architecture/archmap.config.json.",
+    );
   });
 
   it("defaults base to the origin/HEAD branch", () => {

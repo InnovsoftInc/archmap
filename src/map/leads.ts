@@ -59,20 +59,42 @@ const toLead = (r: Raw): Lead => ({
 
 export const leadsOf = (s: Scan): Lead[] => rawLeads(s).map(toLead);
 
-const globMatches = (key: string, pattern: string): boolean => {
+const fileMatches = (file: string, pattern: string): boolean => {
+  if (file === pattern) return true;
   try {
-    return matchesGlob(key, pattern);
+    return matchesGlob(file, pattern);
   } catch {
     return false;
   }
 };
 
-// An ignore entry is a key or a glob over keys (`scan:infra:*@infra/**`). An
-// entry without `@<file>` matches the lead in every file.
-const ignored = (r: Raw, key: string, ignore: string[]): boolean =>
+// In the name part `*` is any run of characters, `/` included, since route
+// names hold paths.
+const nameMatches = (name: string, pattern: string): boolean =>
+  name === pattern ||
+  // eslint-disable-next-line security/detect-non-literal-regexp -- escaped
+  new RegExp(
+    `^${pattern
+      .split("*")
+      .map((p) => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*")}$`,
+    "s",
+  ).test(name);
+
+// An ignore entry is `<name>@<file>`, split at its last `@`: the name part
+// matched with `*` as a wildcard, the file part as a glob
+// (`scan:route:*@apps/api/**`). An entry, or one whose part after the last
+// `@` doesn't match, also counts as a name alone, matching the lead in every
+// file, so a name holding `@` (`GET /users/@me`) works without a file.
+const ignored = (r: Raw, ignore: string[]): boolean =>
   ignore.some((pattern) => {
-    const target = pattern.includes("@") ? key : unkeyed(r);
-    return pattern === target || globMatches(target, pattern);
+    if (nameMatches(unkeyed(r), pattern)) return true;
+    const at = pattern.lastIndexOf("@");
+    return (
+      at >= 0 &&
+      nameMatches(unkeyed(r), pattern.slice(0, at)) &&
+      fileMatches(r.file, pattern.slice(at + 1))
+    );
   });
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -156,7 +178,7 @@ export const unconfirmedLeads = (
   };
   return rawLeads(s).flatMap((r) => {
     const lead = toLead(r);
-    return ignored(r, lead.key, ignore) || confirmed(r) ? [] : [lead];
+    return ignored(r, ignore) || confirmed(r) ? [] : [lead];
   });
 };
 

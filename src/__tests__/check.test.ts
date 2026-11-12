@@ -256,6 +256,27 @@ describe("unconfirmedLeads", () => {
     data: Record<string, unknown>,
   ) => ({ id, folder, file: `${folder}/${id}.md`, data, body: "" });
 
+  it("matches ignore name and file parts separately, * crossing / in the name", () => {
+    const s = scan(root);
+    s.routes.push(
+      { method: "GET", path: "/users/@me", file: "apps/api/src/users.ts" },
+      { method: "POST", path: "/a/b", file: "apps/api/src/deep/a.ts" },
+      { method: "GET", path: "/w", file: "apps/web/server.ts" },
+    );
+    const left = (ignore: string[]) =>
+      unconfirmedLeads(s, [], ignore).map((l) => l.key);
+    expect(left(["scan:route:*@apps/api/**"])).toEqual([
+      "scan:route:GET /w@apps/web/server.ts",
+    ]);
+    expect(left(["scan:route:GET /users/@me"])).toEqual([
+      "scan:route:POST /a/b@apps/api/src/deep/a.ts",
+      "scan:route:GET /w@apps/web/server.ts",
+    ]);
+    expect(left(["scan:route:GET /users/@me@apps/api/src/users.ts"])).toHaveLength(2);
+    expect(left(["scan:route:GET /users/@me@apps/web/**"])).toHaveLength(3);
+    expect(left(["scan:route:POST *"])).toHaveLength(2);
+  });
+
   it("matches routes ignoring method case and a trailing slash", () => {
     repo();
     const s = scan(root);

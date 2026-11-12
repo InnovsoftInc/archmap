@@ -41,7 +41,7 @@ architecture/
 
 The file name is the id. Frontmatter holds the facts the diagrams need (kind, status, connections, endpoints, tables) and each carries `evidence`: a file path, optionally with `#Symbol` (a whole identifier of at least 3 characters). The body explains in plain language: a summary, then `## How it works`, then `## For developers`. The map describes the current state; history is `git log architecture/`.
 
-`check` warns about leads: things `scan` found in the code that the map doesn't cover. Each has a key, `scan:<kind>:<name>@<file>` (for example `scan:route:GET /api/v1/healthcheck@apps/api/src/routes/healthcheck.ts`). To drop a lead that isn't architecture, add its key to `ignore` in `archmap.config.json`. An entry may be a glob over keys (`scan:infra:*@infra/modules/**`), and an entry without `@<file>` matches the lead in every file.
+`check` warns about leads: things `scan` found in the code that the map doesn't cover. Each has a key, `scan:<kind>:<name>@<file>` (for example `scan:route:GET /api/v1/healthcheck@apps/api/src/routes/healthcheck.ts`). To drop a lead that isn't architecture, add its key to `ignore` in `archmap.config.json`. An entry is split at its last `@`: in the name part `*` matches any characters (`/` included), and the file part is a glob, so `scan:route:*@apps/api/**` drops every route in `apps/api` and `scan:infra:*@infra/modules/**` every infrastructure lead there. An entry without `@<file>` matches the lead in every file.
 
 ## Commands
 
@@ -62,7 +62,7 @@ All of them take `--dir <folder>` (default `architecture`). Every command except
 
 ## CI
 
-`init` records the branch pull requests target as `base` in the config (`--base <branch>`, else the branch `origin/HEAD` names, else `main`); the `AGENTS.md` section and the update brief use it. `init --ci github` (or `azure`) writes two jobs for pull requests:
+`init` records the branch pull requests target as `base` in the config (`--base <branch>`, else the branch `origin/HEAD` names, else `main`), adding it to an existing config that has none; the `AGENTS.md` section and the update brief use it. `init --ci github` (or `azure`) writes two jobs for pull requests:
 
 1. `check` (required, no AI) runs `archmap check --base origin/<base branch>`. It fails when the PR changes the architecture but neither the map nor an `Archmap: none - <reason>` commit trailer records it.
 2. `map` (not required) runs `archmap agent --base origin/<base branch>` with the AI key from a CI secret and pushes the map edit to the PR branch, so reviewers see it next to the code. It never blocks a merge.

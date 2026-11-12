@@ -128,6 +128,18 @@ describe("brief", () => {
     expect(out).toContain("- apps/a.ts");
   });
 
+  it("compares with the origin/HEAD branch when neither --base nor the config's base is set", () => {
+    api();
+    initRepo();
+    git("update-ref", "refs/remotes/origin/dev", "HEAD");
+    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/dev");
+    git("branch", "dev");
+    write("apps/a.ts", "a\n");
+    expect(brief(root, dir(), { task: "update" })).toContain(
+      "## What changed since dev",
+    );
+  });
+
   it("includes the gate's finding in the check results with --base", () => {
     write("apps/api/src/a.ts", "a\n");
     api("endpoints:\n  - route: GET /a\n    evidence: apps/api/src/a.ts\n");

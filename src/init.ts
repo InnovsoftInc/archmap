@@ -1,10 +1,10 @@
 // `init`: set a project up for a markdown map: config, README, the AGENTS.md block and, on request, the PR workflow.
 
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { PACKAGE_ROOT, VERSION } from "./home.ts";
 import type { MapConfig, Result } from "./map/types.ts";
+import { defaultBase } from "./git.ts";
 import { cliCommand } from "./version.ts";
 
 const START = "<!-- archmap:start -->";
@@ -52,20 +52,6 @@ const addAgentsImport = (file: string): boolean => {
         : "\n\n";
   writeFileSync(file, `${text}${lead}@AGENTS.md\n`);
   return true;
-};
-
-// The branch pull requests target: the one origin/HEAD names, else main.
-const defaultBase = (root: string): string => {
-  try {
-    const ref = execFileSync(
-      "git",
-      ["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"],
-      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
-    return ref.replace(/^origin\//, "") || "main";
-  } catch {
-    return "main";
-  }
 };
 
 const packageName = (root: string): string | undefined => {
@@ -134,10 +120,12 @@ export const init = (
         ],
       };
     }
-    if (opts.base && config.base !== opts.base) {
-      config = { ...config, base: opts.base };
+    // --base changes the base; a config without one gets the detected one.
+    const base = opts.base ?? config.base ?? defaultBase(root);
+    if (config.base !== base) {
+      config = { ...config, base };
       write(configPath, `${JSON.stringify(config, null, 2)}\n`);
-      lines.push(`Set base to ${opts.base} in ${rel}/archmap.config.json.`);
+      lines.push(`Set base to ${base} in ${rel}/archmap.config.json.`);
     } else lines.push(`Kept the existing ${rel}/archmap.config.json.`);
   } else {
     const name =
@@ -174,7 +162,7 @@ export const init = (
   const section = template("agents-section.md")
     .replaceAll("__CLI__", cli)
     .replaceAll("__DIR__", rel)
-    .replaceAll("__BASE__", config.base ?? defaultBase(root))
+    .replaceAll("__BASE__", config.base ?? "main")
     .trimEnd();
   const agentsText = readFileSync(agents, "utf8");
   const updated = withBlock(agentsText, `${START}\n${section}\n${END}`);

@@ -114,6 +114,7 @@ route, a table by a store table's name, an outside service by an external's id
 or name, and an infrastructure, Docker or CI lead by a `code` entry that is its
 file or a folder above it. A lead that is not part of the architecture goes in
 `ignore` in `archmap.config.json`: each entry is a lead key
-(`scan:<kind>:<name>@<file>`, listed by `scan`) or a glob over keys, such as
-`scan:infra:*@infra/modules/**`. An entry without `@<file>` matches that lead in
-every file.
+(`scan:<kind>:<name>@<file>`, listed by `scan`) or a pattern split at its last
+`@`. In the name part `*` matches any characters, `/` included; the file part
+is a glob. So `scan:route:*@apps/api/**` covers every route in `apps/api`. An
+entry without `@<file>` matches that lead in every file.

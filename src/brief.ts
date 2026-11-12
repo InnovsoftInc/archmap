@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LEAD_WARNING, runCheck } from "./check.ts";
-import { changedFiles } from "./git.ts";
+import { changedFiles, defaultBase } from "./git.ts";
 import { PACKAGE_ROOT } from "./home.ts";
 import { evidenceOf } from "./map/evidence.ts";
 import type { Doc } from "./map/types.ts";
@@ -76,7 +76,7 @@ export const brief = (
   ];
 
   if (task === "update") {
-    const base = opts.base ?? check.map.config.base ?? "main";
+    const base = opts.base ?? check.map.config.base ?? defaultBase(root);
     const changed = changedFiles(root, base);
     const covering = check.map.docs.filter((d) =>
       changed.some((f) => covers(d, f)),
