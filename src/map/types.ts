@@ -29,6 +29,7 @@ export type MapConfig = {
   cli?: string;
   agent?: { command?: string; skip?: string[] };
   ignore?: string[];
+  watch?: string[];
   deploy?: Record<string, unknown>;
   product?: string;
   logo?: string;

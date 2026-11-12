@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { gateProblems } from "./gate.ts";
 import { loadMap } from "./map/load.ts";
 import { schemaProblems } from "./map/schema.ts";
 import { evidenceProblems, plannedWithEvidence } from "./map/evidence.ts";
@@ -34,13 +35,18 @@ const secretProblems = (map: LoadedMap): Finding[] => {
   );
 };
 
-export const runCheck = (root: string, dir: string): CheckResult => {
+export const runCheck = (
+  root: string,
+  dir: string,
+  opts: { base?: string } = {},
+): CheckResult => {
   const map = loadMap(dir);
   const errors: Finding[] = [
     ...map.fileErrors,
     ...schemaProblems(map.docs),
     ...evidenceProblems(root, map.docs),
     ...secretProblems(map),
+    ...(opts.base ? gateProblems(root, dir, opts.base) : []),
   ];
   if (
     !map.config.name &&
