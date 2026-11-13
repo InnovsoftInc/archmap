@@ -283,12 +283,23 @@ export const schemaProblems = (
           isObject(e) && isText(e.name) ? [e.name] : [],
         ),
       );
+      const tables = new Set(
+        list(doc.data.tables).flatMap((t) =>
+          isObject(t) && isText(t.name) ? [t.name] : [],
+        ),
+      );
       list(doc.data.tables).forEach((t, ti) => {
         if (!isObject(t)) return;
         list(t.columns).forEach((c, ci) => {
-          if (isObject(c) && isText(c.enum) && !enums.has(c.enum))
+          if (!isObject(c)) return;
+          if (isText(c.enum) && !enums.has(c.enum))
             out.push(
               `tables[${ti}].columns[${ci}].enum ${JSON.stringify(c.enum)} is not an enum in this store`,
+            );
+          // A foreign key is `table` or `table.column`, in the same store.
+          if (isText(c.fk) && !tables.has(c.fk.split(".")[0] ?? ""))
+            out.push(
+              `tables[${ti}].columns[${ci}].fk ${JSON.stringify(c.fk)} is not a table in this store`,
             );
         });
       });

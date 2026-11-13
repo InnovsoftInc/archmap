@@ -60,7 +60,9 @@ const column = (c: Obj): Column => ({
   type: text(c.type),
   pk: c.pk === true ? true : undefined,
   unique: c.unique === true ? true : undefined,
-  fk: text(c.fk),
+  // `users.id` and `users` both point at the users table; the viewer draws
+  // the line to the table.
+  fk: text(c.fk)?.split(".")[0],
   enum: text(c.enum),
   desc: text(c.desc),
 });

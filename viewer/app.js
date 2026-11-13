@@ -2920,8 +2920,9 @@ vp.addEventListener("pointerdown", function (ev) {
     return;
   }
   var card = ev.target.closest(".card");
-  // A box moves only when dragged by its header strip; dragging anywhere else moves the canvas.
-  if (card && ev.target.closest(".head")) {
+  // Dragging a box moves it (a click without moving still opens it); dragging
+  // the empty canvas moves the canvas.
+  if (card) {
     var q = posOf(card.dataset.key, DEF);
     drag = {
       kind: "card",

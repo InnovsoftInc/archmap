@@ -43,6 +43,11 @@ describe("schemaProblems", () => {
               { name: "org", fk: "orgs.id" },
             ],
           },
+          {
+            name: "orgs",
+            evidence: "schema.ts",
+            columns: [{ name: "id", type: "uuid", pk: true }],
+          },
         ],
         enums: [{ name: "role", values: ["a", "b"], evidence: "e.ts" }],
       }),
@@ -195,6 +200,27 @@ describe("schemaProblems", () => {
     expect(messages([store("db", { tables }), other])).toContain(
       'tables[0].columns[0].enum "role" is not an enum in this store',
     );
+  });
+
+  it("requires a column fk to name a table in the same store, as table or table.column", () => {
+    const tables = [
+      { name: "users", evidence: "s.ts", columns: [{ name: "id" }] },
+      {
+        name: "orders",
+        evidence: "s.ts",
+        columns: [
+          { name: "user_id", fk: "users.id" },
+          { name: "owner", fk: "users" },
+          { name: "shop_id", fk: "shops.id" },
+        ],
+      },
+    ];
+    const fkProblems = messages([store("db", { tables })]).filter((m) =>
+      m.includes(".fk "),
+    );
+    expect(fkProblems).toEqual([
+      'tables[1].columns[2].fk "shops.id" is not a table in this store',
+    ]);
   });
 
   it("checks external kind", () => {
