@@ -110,11 +110,15 @@ scheduler in `apps/api/src/jobs`.
 ```
 
 **Leads.** Check warns about each thing the scanner found that the map doesn't
-cover yet. A lead is confirmed by evidence that cites its file, and by its own
-match: an app by a `code` entry at or inside its path, a route by an `endpoints`
-route, a table by a store table's name, an outside service by an external's id
-or name, and an infrastructure, Docker or CI lead by a `code` entry that is its
-file or a folder above it. A lead that is not part of the architecture goes in
+cover yet. Each kind is confirmed its own way: an app by a `code` entry at or
+inside its path; a route by an `endpoints` route; a table by a store table's
+name; an outside service by an external whose id or name is the service name or
+starts with it (`azure-blob` covers `Azure`); an environment variable from
+`.env.example` by its name appearing in an external's frontmatter or any doc's
+body; and an infrastructure, Docker or CI lead by a `code` entry that is its
+file or a folder above it. Evidence that cites a lead's file confirms only app,
+infrastructure, Docker and CI leads: a new route or table in a file the map
+already cites is still a lead. A lead that is not part of the architecture goes in
 `ignore` in `archmap.config.json`: each entry is a lead key
 (`scan:<kind>:<name>@<file>`, listed by `scan`) or a pattern split at its last
 `@`. In the name part `*` matches any characters, `/` included; the file part
