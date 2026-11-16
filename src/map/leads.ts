@@ -61,7 +61,8 @@ export const leadsOf = (s: Scan): Lead[] => rawLeads(s).map(toLead);
 
 // `**` is any run of folders, `*` and `?` stay inside one folder. Unlike
 // path.matchesGlob, these also match dotfiles (`.archmap-local/**` covers
-// `.env.sample`); matchesGlob still handles anything else, such as `{a,b}`.
+// `.env.sample`), and `[` is literal, so `app/users/[id]/route.ts` names
+// only that file. A pattern with `{a,b}` also goes to matchesGlob.
 const globRegex = (pattern: string): RegExp => {
   let out = "";
   for (let i = 0; i < pattern.length; i++) {
@@ -78,43 +79,65 @@ const globRegex = (pattern: string): RegExp => {
   return new RegExp(`^${out}$`, "s");
 };
 
-const fileMatches = (file: string, pattern: string): boolean => {
-  if (file === pattern || globRegex(pattern).test(file)) return true;
-  try {
-    return matchesGlob(file, pattern);
-  } catch {
-    return false;
-  }
+const fileMatcher = (pattern: string): ((file: string) => boolean) => {
+  const re = globRegex(pattern);
+  const braces = pattern.includes("{");
+  return (file) => {
+    if (file === pattern || re.test(file)) return true;
+    if (!braces) return false;
+    try {
+      return matchesGlob(file, pattern);
+    } catch {
+      return false;
+    }
+  };
 };
 
 // In the name part `*` is any run of characters, `/` included, since route
 // names hold paths.
-const nameMatches = (name: string, pattern: string): boolean =>
-  name === pattern ||
+const nameMatcher = (pattern: string): ((name: string) => boolean) => {
   // eslint-disable-next-line security/detect-non-literal-regexp -- escaped
-  new RegExp(
+  const re = new RegExp(
     `^${pattern
       .split("*")
       .map((p) => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
       .join(".*")}$`,
     "s",
-  ).test(name);
+  );
+  return (name) => name === pattern || re.test(name);
+};
 
 // An ignore entry is `<name>@<file>`, split at its last `@`: the name part
 // matched with `*` as a wildcard, the file part as a glob
 // (`scan:route:*@apps/api/**`). An entry, or one whose part after the last
 // `@` doesn't match, also counts as a name alone, matching the lead in every
 // file, so a name holding `@` (`GET /users/@me`) works without a file.
-const ignored = (r: Raw, ignore: string[]): boolean =>
-  ignore.some((pattern) => {
-    if (nameMatches(unkeyed(r), pattern)) return true;
-    const at = pattern.lastIndexOf("@");
-    return (
-      at >= 0 &&
-      nameMatches(unkeyed(r), pattern.slice(0, at)) &&
-      fileMatches(r.file, pattern.slice(at + 1))
-    );
-  });
+type Ignore = (name: string, file: string) => boolean;
+const ignoreMatcher = (pattern: string): Ignore => {
+  const whole = nameMatcher(pattern);
+  const at = pattern.lastIndexOf("@");
+  if (at < 0) return (name) => whole(name);
+  const name = nameMatcher(pattern.slice(0, at));
+  const file = fileMatcher(pattern.slice(at + 1));
+  return (n, f) => whole(n) || (name(n) && file(f));
+};
+
+// A code entry as a repo-relative folder: `./infra/` and `infra\` are
+// `infra`, `./` is `.`.
+const normalizePath = (p: string): string => {
+  if (p.trim() === "") return "";
+  const s = p
+    .replace(/\\/g, "/")
+    .replace(/^(?:\.\/)+/, "")
+    .replace(/\/+$/, "");
+  return s === "" ? "." : s;
+};
+
+// `path` is `folder` or inside it; the root folder covers nothing this way.
+const isUnder = (path: string, folder: string): boolean =>
+  folder !== "." &&
+  folder !== "" &&
+  (path === folder || path.startsWith(`${folder}/`));
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string | undefined =>
@@ -139,7 +162,12 @@ export const unconfirmedLeads = (
   );
   // An app is covered by a code entry that is its path or a path inside it;
   // the root app (".") only by a code entry of ".".
-  const codes = docs.flatMap((d) => list(d.data.code).map(str));
+  const codes = docs.flatMap((d) =>
+    list(d.data.code).flatMap((c) => {
+      const s = str(c);
+      return s === undefined ? [] : [normalizePath(s)];
+    }),
+  );
   const routes = new Set(
     docs.flatMap((d) =>
       list(d.data.endpoints).flatMap((e) => {
@@ -171,33 +199,23 @@ export const unconfirmedLeads = (
   // Infrastructure, Docker and CI leads are also confirmed by a code entry
   // that is the lead's file or a folder above it.
   const coversFile = (file: string): boolean =>
-    codes.some((c) => {
-      if (c === undefined) return false;
-      const folder = c.replace(/\/+$/, "");
-      return (
-        folder !== "." &&
-        folder !== "" &&
-        (file === folder || file.startsWith(`${folder}/`))
-      );
-    });
+    codes.some((c) => isUnder(file, c));
   const confirmed = (lead: Raw): boolean => {
     if (evidenceFiles.has(lead.file)) return true;
     const { kind, name } = lead;
     if (kind === "app")
-      return codes.some(
-        (c) =>
-          c !== undefined &&
-          (c === name || (name !== "." && c.startsWith(`${name}/`))),
-      );
+      return codes.some((c) => c === name || isUnder(c, name));
     if (kind === "route") return routes.has(normalizeRouteText(name));
     if (kind === "table") return tables.has(name);
     if (kind === "outside") return external.has(name.toLowerCase());
     if (kind === "infra" || kind === "ci") return coversFile(lead.file);
     return false;
   };
+  const ignores = ignore.map(ignoreMatcher);
   return rawLeads(s).flatMap((r) => {
-    const lead = toLead(r);
-    return ignored(r, ignore) || confirmed(r) ? [] : [lead];
+    const name = unkeyed(r);
+    if (ignores.some((m) => m(name, r.file)) || confirmed(r)) return [];
+    return [toLead(r)];
   });
 };
 

@@ -296,6 +296,50 @@ describe("unconfirmedLeads", () => {
     ]);
   });
 
+  it("reads [ in an ignore file part literally, and still expands braces", () => {
+    const s = scan(root);
+    s.routes.push(
+      { method: "GET", path: "/u", file: "app/users/[id]/route.ts" },
+      { method: "GET", path: "/u", file: "app/users/i/route.ts" },
+      { method: "GET", path: "/v", file: "app/web/route.ts" },
+    );
+    const left = (ignore: string[]) =>
+      unconfirmedLeads(s, [], ignore)
+        .map((l) => l.key)
+        .filter((k) => k.includes("@app/"));
+    expect(left(["scan:route:*@app/users/[id]/route.ts"])).toEqual([
+      "scan:route:GET /u@app/users/i/route.ts",
+      "scan:route:GET /v@app/web/route.ts",
+    ]);
+    expect(left(["scan:route:*@app/{web,users/i}/route.ts"])).toEqual([
+      "scan:route:GET /u@app/users/[id]/route.ts",
+    ]);
+  });
+
+  it("confirms infra and app leads from ./, trailing-slash and backslash code entries", () => {
+    const s = scan(root);
+    s.infra.push({
+      kind: "terraform",
+      type: "azurerm_postgresql",
+      name: "pg",
+      file: "infra/pg.tf",
+    });
+    s.apps.push({
+      name: "billing",
+      path: "apps/billing",
+      deps: [],
+      file: "apps/billing/package.json",
+    });
+    const left = (code: string[]) =>
+      unconfirmedLeads(s, [doc("services", "x", { code })], [])
+        .map((l) => l.key)
+        .filter((k) => k.includes("pg@") || k.includes("apps/billing@"));
+    expect(left([])).toHaveLength(2);
+    expect(left(["./infra", ".\\apps\\billing\\"])).toEqual([]);
+    expect(left(["infra/", "./apps/billing/src"])).toEqual([]);
+    expect(left(["./", "."])).toHaveLength(2);
+  });
+
   it("matches routes ignoring method case and a trailing slash", () => {
     repo();
     const s = scan(root);
