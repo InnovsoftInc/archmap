@@ -1,7 +1,10 @@
 // archmap viewer: the map's UI. It reads data.json (written by `archmap build`, or served
 // fresh by `archmap dev`), which carries the map's model, each doc's text and the check results.
 
-var STORE = "archmap-pos-v1";
+// Saved box positions, one entry per map: the old single key is read once per map
+// that has none of its own yet, and kept for other maps on the same origin.
+var STORE_OLD = "archmap-pos-v1",
+  STORE_PREFIX = "archmap-pos-v2|";
 var W = 248,
   SW = 220,
   HEAD = 34,
@@ -12,14 +15,17 @@ var W = 248,
   PAD = 24,
   PAD_T = 46,
   ZGAP = 90;
-var LANES = [
-  { id: "frontend", name: "Frontend" },
-  { id: "backend", name: "Backend" },
-  { id: "data", name: "Data stores" },
-  { id: "platform", name: "Platform and delivery" },
-  { id: "third_party", name: "Third-party and partners" },
-  { id: "legacy", name: "Legacy (retiring)" },
-];
+
+// Id-keyed lookups have no prototype, so an id like "constructor" or "toString"
+// is just a key.
+function dict() {
+  return Object.create(null);
+}
+function own(o, k) {
+  return o != null && Object.prototype.hasOwnProperty.call(o, k)
+    ? o[k]
+    : undefined;
+}
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -35,16 +41,41 @@ function esc(s) {
 function same(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+// An id from the map as part of a CSS custom property name: only [A-Za-z0-9_-]
+// survive, so it can't end the var() or the style attribute it is written into.
+function cssId(s) {
+  return String(s == null ? "" : s).replace(/[^A-Za-z0-9_-]/g, "_");
+}
 function zvar(area) {
-  return "var(--z-" + area + ", var(--z-records))";
+  return "var(--z-" + cssId(area) + ", var(--z-records))";
 }
 function lvar(lane) {
-  return "var(--l-" + lane + ", var(--l-platform))";
+  return "var(--l-" + cssId(lane) + ", var(--l-platform))";
+}
+// A link from the config keeps only http, https, mailto or a relative URL.
+// Control characters and whitespace are dropped before the check, as browsers do.
+function safeHref(u) {
+  if (typeof u !== "string") return null;
+  // eslint-disable-next-line no-control-regex -- stripping them is the point
+  var s = u.replace(/[\u0000- \u007f]/g, "");
+  if (!s) return null;
+  if (/^(?:https?|mailto):/i.test(s)) return u.trim();
+  return /^[a-z][a-z\d+.-]*:/i.test(s) ? null : u.trim();
+}
+// A stylesheet from the config: https, or a path on this site.
+function safeStylesheet(u) {
+  var h = safeHref(u);
+  if (!h) return null;
+  // eslint-disable-next-line no-control-regex -- stripping them is the point
+  var s = h.replace(/[\u0000- \u007f]/g, "");
+  if (/^https:/i.test(s)) return h;
+  if (/^[a-z][a-z\d+.-]*:/i.test(s) || /^[\\/]{2}/.test(s)) return null;
+  return h;
 }
 
 // ---------- data: the model, each doc's text (HTML) and what `archmap check` found
 var MODEL = null,
-  DOCS = {},
+  DOCS = dict(),
   CHECK = { errors: [], warnings: [] },
   README = "",
   PUBLIC = false,
@@ -53,14 +84,14 @@ var MODEL = null,
 
 function emptyModel() {
   return {
-    categories: {},
-    areas: {},
-    tables: {},
-    enums: {},
-    services: {},
-    connections: {},
-    personas: {},
-    flows: {},
+    categories: dict(),
+    areas: dict(),
+    tables: dict(),
+    enums: dict(),
+    services: dict(),
+    connections: dict(),
+    personas: dict(),
+    flows: dict(),
     problems: [],
   };
 }
@@ -72,18 +103,80 @@ var view = "arch",
   per = null,
   hov = null,
   query = "";
-var P = {};
-try {
-  P = JSON.parse(localStorage.getItem(STORE) || "{}") || {};
-} catch (e) {
-  P = {};
+// Saved positions, keyed "scope|card key". Read once the map's name is known.
+var P = dict(),
+  storeKey = null;
+function readStore(key) {
+  try {
+    var v = JSON.parse(localStorage.getItem(key) || "null");
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      var out = dict();
+      Object.keys(v).forEach(function (k) {
+        var q = v[k];
+        if (q && isFinite(q.x) && isFinite(q.y)) out[k] = { x: +q.x, y: +q.y };
+      });
+      return out;
+    }
+  } catch (e) {
+    /* unreadable or blocked storage: start empty */
+  }
+  return null;
 }
 function savePos() {
+  if (!storeKey) return;
   try {
-    localStorage.setItem(STORE, JSON.stringify(P));
+    localStorage.setItem(storeKey, JSON.stringify(P));
   } catch (e) {
     /* ignore */
   }
+}
+// Whether a saved "scope|key" still names something on the map.
+function posLive(k, B) {
+  var bar = k.indexOf("|");
+  if (bar < 0) return false;
+  var sc = k.slice(0, bar),
+    key = k.slice(bar + 1);
+  if (sc === "schema") return own(B.tables, key) !== undefined;
+  if (sc.indexOf("flow/") === 0 && own(B.flows, sc.slice(5)) === undefined)
+    return false;
+  if (sc.indexOf("arch/") === 0) {
+    var segs = sc.slice(5) ? sc.slice(5).split("/") : [];
+    if (segs.length && own(B.categories, segs[0]) === undefined) return false;
+    for (var i = 1; i < segs.length; i++)
+      if (own(B.services, segs[i]) === undefined) return false;
+  } else if (sc.indexOf("flow/") !== 0) return false;
+  var kind = key.slice(0, 4),
+    id = key.slice(4);
+  if (kind === "svc:") return own(B.services, id) !== undefined;
+  if (kind === "act:") return own(B.personas, id) !== undefined;
+  if (kind === "cat:") return own(B.categories, id) !== undefined;
+  return false;
+}
+// Loads this map's saved positions (migrating the old shared key once) and
+// drops the ones whose boxes are no longer on the map.
+function loadPositions() {
+  var key = STORE_PREFIX + (CONFIG.name || "") + "|" + location.pathname;
+  if (key !== storeKey) {
+    storeKey = key;
+    P = readStore(key) || readStore(STORE_OLD) || dict();
+  }
+  var B = MODEL || emptyModel();
+  // An empty model (a file mid-edit in dev) would drop every saved position.
+  if (!Object.keys(B.services).length && !Object.keys(B.tables).length) return;
+  var dropped = false;
+  Object.keys(P).forEach(function (k) {
+    if (!posLive(k, B)) {
+      delete P[k];
+      dropped = true;
+    }
+  });
+  var had = false;
+  try {
+    had = localStorage.getItem(key) !== null;
+  } catch (e) {
+    had = true;
+  }
+  if (dropped || !had) savePos();
 }
 
 var $ = function (id) {
@@ -98,6 +191,7 @@ var vp = $("vp"),
 var NS = "http://www.w3.org/2000/svg";
 
 // ---------- view model: the map's model, shaped for drawing
+// Built once per data load: drawing and navigation only read it.
 var VM = null;
 function buildVM() {
   var B = MODEL || emptyModel();
@@ -107,7 +201,7 @@ function buildVM() {
     services: [],
     conns: [],
     edges: [],
-    areas: {},
+    areas: dict(),
   };
   Object.keys(B.tables).forEach(function (n) {
     var t = B.tables[n];
@@ -139,7 +233,7 @@ function buildVM() {
   Object.keys(B.areas).forEach(function (id) {
     vm.areas[id] = B.areas[id];
   });
-  vm.T = {};
+  vm.T = dict();
   vm.tables.forEach(function (t) {
     vm.T[t.name] = t;
   });
@@ -152,32 +246,32 @@ function buildVM() {
   Object.keys(B.services).forEach(function (id) {
     vm.services.push({ id: id, s: B.services[id], st: "" });
   });
-  vm.S = {};
+  vm.S = dict();
   vm.services.forEach(function (s) {
     vm.S[s.id] = s;
   });
+  // Per lane and per parent, so a card or filter never scans every service.
+  vm.byLane = dict();
+  vm.topByLane = dict(); // no parent
+  vm.rootByLane = dict(); // no parent on the map
+  vm.kids = dict();
+  vm.services.forEach(function (x) {
+    var lane = x.s.lane;
+    (vm.byLane[lane] = vm.byLane[lane] || []).push(x);
+    if (x.s.parent && vm.S[x.s.parent])
+      (vm.kids[x.s.parent] = vm.kids[x.s.parent] || []).push(x);
+    else (vm.rootByLane[lane] = vm.rootByLane[lane] || []).push(x);
+    if (!x.s.parent) (vm.topByLane[lane] = vm.topByLane[lane] || []).push(x);
+  });
   Object.keys(B.connections).forEach(function (id) {
     var c = B.connections[id];
-    if (vm.S[c.from] && vm.S[c.to]) vm.conns.push({ id: id, c: c, st: "" });
+    if (c && vm.S[c.from] && vm.S[c.to])
+      vm.conns.push({ id: id, c: c, st: "" });
   });
-  var catIds = Object.keys(B.categories);
-  if (catIds.length)
-    vm.cats = catIds.map(function (id) {
-      // The "outside" lane holds external systems: drawn below the boundary.
-      return {
-        id: id,
-        c: Object.assign({ external: id === "outside" }, B.categories[id]),
-        st: "",
-      };
-    });
-  else
-    vm.cats = LANES.filter(function (l) {
-      return vm.services.some(function (x) {
-        return x.s.lane === l.id;
-      });
-    }).map(function (l, i) {
-      return { id: l.id, c: { name: l.name, order: i }, st: "" };
-    });
+  // The data carries one category per lane in use, from the map's lanes.
+  vm.cats = Object.keys(B.categories).map(function (id) {
+    return { id: id, c: B.categories[id], st: "" };
+  });
   vm.cats.sort(function (a, b) {
     return (a.c.order || 0) - (b.c.order || 0);
   });
@@ -187,20 +281,27 @@ function buildVM() {
     })
     .map(function (id) {
       var p = B.personas[id],
-        tables = {};
-      (p.jobs || []).forEach(function (j) {
-        Object.keys(j.t || {}).forEach(function (n) {
-          if (j.t[n] === "w" || !tables[n]) tables[n] = j.t[n];
+        tables = dict();
+      (Array.isArray(p.jobs) ? p.jobs : []).forEach(function (j) {
+        var t = j && j.t && typeof j.t === "object" ? j.t : {};
+        Object.keys(t).forEach(function (n) {
+          var mode = t[n] === "w" ? "w" : "r";
+          if (mode === "w" || !tables[n]) tables[n] = mode;
         });
       });
       return { id: id, p: p, tables: tables, st: "" };
     });
-  vm.PER = {};
+  // Which tables a persona reads and writes, and whom it uses, are only drawn
+  // when the data says so; without them a persona is its jobs and blurb.
+  vm.personaTables = vm.personas.some(function (x) {
+    return Object.keys(x.tables).length > 0;
+  });
+  vm.PER = dict();
   vm.personas.forEach(function (x) {
     vm.PER[x.id] = x;
   });
   vm.actors = vm.personas.filter(function (x) {
-    return (x.p.uses || []).length;
+    return usesOf(x.p).length;
   });
   vm.flows = Object.keys(B.flows)
     .map(function (id) {
@@ -209,15 +310,23 @@ function buildVM() {
     .sort(function (a, b) {
       return (a.f.order || 0) - (b.f.order || 0);
     });
-  vm.FL = {};
+  vm.FL = dict();
   vm.flows.forEach(function (x) {
     vm.FL[x.id] = x;
   });
   VM = vm;
 }
+function usesOf(p) {
+  return Array.isArray(p.uses)
+    ? p.uses.filter(function (u) {
+        return u && typeof u.to === "string";
+      })
+    : [];
+}
 function colType(c, m) {
-  if (c.enum && m.enums[c.enum])
-    return m.enums[c.enum].style === "native"
+  var en = c.enum ? own(m.enums, c.enum) : undefined;
+  if (en)
+    return en.style === "native"
       ? c.enum + (c.array ? "[]" : "")
       : c.array
         ? "text[]"
@@ -231,46 +340,32 @@ function areaOrder(vm) {
     return (vm.areas[a].order || 0) - (vm.areas[b].order || 0);
   });
 }
+// Areas side by side, each two columns of tables.
 function layoutSchema(vm) {
-  var pos = {},
-    rows = {};
-  areaOrder(vm).forEach(function (id) {
-    var r = vm.areas[id].row || 0;
-    (rows[r] = rows[r] || []).push(id);
-  });
-  var y = 0;
-  Object.keys(rows)
-    .sort()
-    .forEach(function (r) {
-      var x = 0,
-        rowH = 0;
-      rows[r].forEach(function (aid) {
-        var n = vm.areas[aid].cols || 2,
-          colH = [],
-          i;
-        for (i = 0; i < n; i++) colH.push(0);
-        vm.tables
-          .filter(function (t) {
-            return t.t.area === aid;
-          })
-          .sort(function (a, b) {
-            return (a.t.order || 0) - (b.t.order || 0);
-          })
-          .forEach(function (t) {
-            var c = colH.indexOf(Math.min.apply(null, colH));
-            pos[t.name] = {
-              x: x + PAD + c * (W + GAP),
-              y: y + PAD_T + colH[c],
-            };
-            colH[c] += t.h + GAP;
-          });
-        var zw = PAD * 2 + n * W + (n - 1) * GAP,
-          zh = PAD_T + Math.max(0, Math.max.apply(null, colH) - GAP) + PAD;
-        x += zw + ZGAP;
-        rowH = Math.max(rowH, zh);
+  var pos = dict(),
+    x = 0;
+  areaOrder(vm).forEach(function (aid) {
+    var n = vm.areas[aid].cols || 2,
+      colH = [],
+      i;
+    for (i = 0; i < n; i++) colH.push(0);
+    vm.tables
+      .filter(function (t) {
+        return t.t.area === aid;
+      })
+      .sort(function (a, b) {
+        return (a.t.order || 0) - (b.t.order || 0);
+      })
+      .forEach(function (t) {
+        var c = colH.indexOf(Math.min.apply(null, colH));
+        pos[t.name] = {
+          x: x + PAD + c * (W + GAP),
+          y: PAD_T + colH[c],
+        };
+        colH[c] += t.h + GAP;
       });
-      y += rowH + ZGAP;
-    });
+    x += PAD * 2 + n * W + (n - 1) * GAP + ZGAP;
+  });
   return pos;
 }
 var AW = 210,
@@ -311,15 +406,15 @@ var ICON = {
   container:
     '<svg viewBox="0 0 16 16"><path d="M2 5.5h12v8H2zM3.5 5.5V3h9v2.5"/></svg>',
 };
+// Always one of TYPE_LABEL's keys, so its label and icon are this file's own text.
 function stype(s) {
-  return (
-    s.type ||
-    (s.lane === "third_party" || s.lane === "legacy"
+  return own(TYPE_LABEL, s.type)
+    ? s.type
+    : s.lane === "third_party" || s.lane === "legacy"
       ? "external"
       : s.opens === "schema"
         ? "store"
-        : "app")
-  );
+        : "app";
 }
 function catName(id) {
   return (
@@ -338,13 +433,20 @@ var FRESH = {
 };
 function versionBadge(s) {
   if (!s.version) return "";
-  var tip = s.latest ? ' title="Latest: ' + esc(s.latest) + '"' : "";
+  var tip = s.latest ? ' title="Latest: ' + esc(s.latest) + '"' : "",
+    fresh = own(FRESH, s.fresh);
   return (
     '<span class="mt ver">· ' +
     esc(s.version) +
     "</span>" +
-    (s.fresh && FRESH[s.fresh]
-      ? '<span class="fresh f-' + s.fresh + '"' + tip + ">" + FRESH[s.fresh] + "</span>"
+    (fresh
+      ? '<span class="fresh f-' +
+        esc(s.fresh) +
+        '"' +
+        tip +
+        ">" +
+        esc(fresh) +
+        "</span>"
       : "")
   );
 }
@@ -356,9 +458,12 @@ var PART_GROUPS = [
 ];
 function partGroups(items) {
   var groups = PART_GROUPS.map(function (g) {
-    return { name: g.name, items: items.filter(function (x) {
-      return stype(x.s) === g.type;
-    }) };
+    return {
+      name: g.name,
+      items: items.filter(function (x) {
+        return stype(x.s) === g.type;
+      }),
+    };
   });
   var rest = items.filter(function (x) {
     return !PART_GROUPS.some(function (g) {
@@ -383,15 +488,13 @@ function svcCard(x, opts) {
   el.dataset.key = k;
   if (stub) el.title = s.name + " · click to go to it";
   el.style.setProperty("--z", lvar(catOf(x.id)));
-  el.setAttribute("role", "button");
-  el.setAttribute("tabindex", "0");
-  el.setAttribute("aria-label", (drillable ? "Open " : "") + s.name);
+  cardRole(el, (drillable ? "Open " : "") + s.name);
   var meta =
     '<div class="meta">' +
     (stub
       ? '<span class="mt">' + esc(catName(catOf(x.id))) + "</span>"
       : '<span class="mt">' +
-        TYPE_LABEL[t] +
+        esc(TYPE_LABEL[t]) +
         "</span>" +
         (s.status && s.status !== "live"
           ? '<span class="mt">· ' + esc(s.status) + "</span>"
@@ -409,9 +512,7 @@ function svcCard(x, opts) {
     meta +
     (stub
       ? ""
-      : '<div class="sbody"><span class="tech">' +
-        esc(s.tech || "") +
-        '</span><span class="pur">' +
+      : '<div class="sbody"><span class="pur">' +
         esc(s.purpose || "") +
         "</span></div>");
   return el;
@@ -421,9 +522,7 @@ function actorCard(a) {
     k = "act:" + a.id;
   el.className = "card actor" + (a.st ? " " + a.st : "");
   el.dataset.key = k;
-  el.setAttribute("role", "button");
-  el.setAttribute("tabindex", "0");
-  el.setAttribute("aria-label", "Persona " + a.p.name);
+  cardRole(el, "Persona " + a.p.name);
   el.innerHTML =
     '<div class="head"><span class="ico">' +
     ICON.actor +
@@ -453,8 +552,8 @@ function addZone(keys, title, sub, color, opts) {
 }
 // Architecture is browsed by level: path [] = categories, [cat] = items in a category, [cat, item, ...] = parts of an item.
 var CW = 280,
-  SIZE = {},
-  MH = {},
+  SIZE = dict(),
+  MH = dict(),
   showOutside = false,
   showTypes = false;
 function hOf(k, d) {
@@ -468,9 +567,14 @@ function catOf(id) {
   return s ? s.s.lane : null;
 }
 function childrenOf(id) {
-  return VM.services.filter(function (x) {
-    return x.s.parent === id;
-  });
+  return VM.kids[id] || [];
+}
+// Every box is a button; its name is kept so apply() can add its state to it.
+function cardRole(el, label) {
+  el.setAttribute("role", "button");
+  el.setAttribute("tabindex", "0");
+  el.dataset.label = label;
+  el.setAttribute("aria-label", label);
 }
 function pathFor(id) {
   var chain = [],
@@ -484,12 +588,9 @@ function pathFor(id) {
 }
 function levelSets() {
   var main;
-  if (path.length === 1)
-    main = VM.services.filter(function (x) {
-      return x.s.lane === path[0] && !(x.s.parent && VM.S[x.s.parent]);
-    });
+  if (path.length === 1) main = (VM.rootByLane[path[0]] || []).slice();
   else main = childrenOf(path[path.length - 1]);
-  var inMain = {};
+  var inMain = dict();
   main.forEach(function (x) {
     inMain[x.id] = true;
   });
@@ -510,8 +611,8 @@ function levelSets() {
       if (inMain[ch[i]]) return { id: ch[i], main: true };
     return { id: ch[ch.length - 1], main: false };
   }
-  var stubs = {},
-    agg = {};
+  var stubs = dict(),
+    agg = dict();
   VM.conns.forEach(function (c) {
     var a = visible(c.c.from),
       b = visible(c.c.to);
@@ -540,7 +641,7 @@ function levelSets() {
   var actors = [],
     uses = [];
   VM.actors.forEach(function (a) {
-    (a.p.uses || []).forEach(function (u) {
+    usesOf(a.p).forEach(function (u) {
       if (inMain[u.to]) {
         if (actors.indexOf(a) === -1) actors.push(a);
         uses.push({ a: a, u: u });
@@ -549,7 +650,7 @@ function levelSets() {
   });
   var allStubs = Object.keys(stubs).length;
   if (!showOutside) {
-    stubs = {};
+    stubs = dict();
     conns = conns.filter(function (c) {
       return inMain[c.c.from] && inMain[c.c.to];
     });
@@ -571,8 +672,8 @@ function catCardH(n, purpose) {
   );
 }
 function layoutArch(vm) {
-  var pos = {};
-  SIZE = {};
+  var pos = dict();
+  SIZE = dict();
   if (!path.length) {
     // Overview: actors on top, the platform boundary in the middle, outside systems below.
     var GX = CW + 110,
@@ -585,9 +686,7 @@ function layoutArch(vm) {
     var y0 = AH + 150,
       maxH = 0;
     inside.forEach(function (c, i) {
-      var n = vm.services.filter(function (x) {
-          return x.s.lane === c.id && !x.s.parent;
-        }).length,
+      var n = (vm.topByLane[c.id] || []).length,
         h = catCardH(n, c.c.purpose);
       h = hOf("cat:" + c.id, h);
       pos["cat:" + c.id] = { x: i * GX, y: y0 };
@@ -596,9 +695,7 @@ function layoutArch(vm) {
     });
     var y1 = y0 + maxH + 180;
     outside.forEach(function (c, i) {
-      var n = vm.services.filter(function (x) {
-          return x.s.lane === c.id && !x.s.parent;
-        }).length,
+      var n = (vm.topByLane[c.id] || []).length,
         h = catCardH(n, c.c.purpose);
       h = hOf("cat:" + c.id, h);
       pos["cat:" + c.id] = { x: i * GX, y: y1 };
@@ -681,9 +778,9 @@ function flowNodes(f) {
   return order;
 }
 function layoutFlow(vm) {
-  var pos = {},
+  var pos = dict(),
     f = vm.FL[flowId] && vm.FL[flowId].f;
-  SIZE = {};
+  SIZE = dict();
   if (!f) return pos;
   var nodes = flowNodes(f),
     acts = nodes.filter(function (n) {
@@ -727,10 +824,10 @@ function posOf(key, def) {
 }
 
 // ---------- render
-var cardEls = {},
+var cardEls = dict(),
   zoneEls = [],
   edgeEls = [],
-  DEF = {};
+  DEF = dict();
 // Empty layers say so and name the command that fills them.
 var EMPTY = {
   overview:
@@ -770,7 +867,6 @@ function showCanvasEmpty(key) {
   vp.insertAdjacentHTML("beforeend", emptyState(key, "canvas"));
 }
 function render() {
-  buildVM();
   if (
     view === "arch" &&
     path.length &&
@@ -788,10 +884,10 @@ function render() {
   cardLayer.innerHTML = "";
   zoneLayer.innerHTML = "";
   svg.innerHTML = "";
-  cardEls = {};
+  cardEls = dict();
   edgeEls = [];
   zoneEls = [];
-  MH = {};
+  MH = dict();
   if (view === "schema") renderSchema();
   else if (view === "flow") renderFlow();
   else renderArch();
@@ -812,10 +908,10 @@ function render() {
   place();
   apply();
   renderChrome();
-  drawMini();
+  scheduleMini();
 }
 function keyBadges(st) {
-  return st ? '<span class="badge ' + st + '">' + st + "</span>" : "";
+  return st ? '<span class="badge ' + esc(st) + '">' + esc(st) + "</span>" : "";
 }
 function renderSchema() {
   var vm = VM;
@@ -851,15 +947,12 @@ function renderSchema() {
     el.dataset.key = t.name;
     el.dataset.kind = "table";
     el.style.setProperty("--z", zvar(t.t.area));
-    el.setAttribute("role", "button");
-    el.setAttribute("tabindex", "0");
-    el.setAttribute("aria-label", "Table " + t.name);
+    cardRole(el, "Table " + t.name);
     var h =
       '<div class="head"><span class="tn">' +
       esc(t.name) +
       "</span>" +
       keyBadges(t.st) +
-      (t.t.append ? '<span class="badge">append-only</span>' : "") +
       "</div>";
     t.cols.forEach(function (x, i) {
       var c = x.c,
@@ -868,7 +961,7 @@ function renderSchema() {
       else if (c.fk)
         key =
           '<span class="k fk" style="--zk:' +
-          zvar(vm.T[c.fk] ? vm.T[c.fk].t.area : "records") +
+          esc(zvar(vm.T[c.fk] ? vm.T[c.fk].t.area : "records")) +
           '">FK</span>';
       else if (c.unique) key = '<span class="k u">U</span>';
       else if (c.enum) key = '<span class="k en">E</span>';
@@ -894,10 +987,7 @@ function renderSchema() {
         esc(ty) +
         "</span></div>";
     });
-    h +=
-      '<div class="foot">' +
-      (t.t.append ? "created_at" : "created_at · updated_at") +
-      "</div>";
+    h += '<div class="foot">created_at · updated_at</div>';
     el.innerHTML = h;
     cardLayer.appendChild(el);
     cardEls[t.name] = el;
@@ -939,13 +1029,9 @@ function renderArch() {
         "var(--edge)",
       );
     vm.cats.forEach(function (c) {
-      var items = vm.services
-        .filter(function (x) {
-          return x.s.lane === c.id && !(x.s.parent && vm.S[x.s.parent]);
-        })
-        .sort(function (a, b) {
-          return (a.s.order || 0) - (b.s.order || 0);
-        });
+      var items = (vm.rootByLane[c.id] || []).slice().sort(function (a, b) {
+        return (a.s.order || 0) - (b.s.order || 0);
+      });
       var st = c.st;
       var el = document.createElement("div"),
         k = "cat:" + c.id;
@@ -953,14 +1039,12 @@ function renderArch() {
         "card cat" + (c.c.external ? " ext" : "") + (st ? " " + st : "");
       el.dataset.key = k;
       el.style.setProperty("--z", lvar(c.id));
-      el.setAttribute("role", "button");
-      el.setAttribute("tabindex", "0");
-      el.setAttribute("aria-label", "Open " + c.c.name);
+      cardRole(el, "Open " + c.c.name);
       el.innerHTML =
         '<div class="head"><span class="tn">' +
         esc(c.c.name) +
         '</span></div><div class="meta"><span class="mt">' +
-        (c.c.external ? LABELS.outside || "Outside" : "Category") +
+        esc(c.c.external ? LABELS.outside || "Outside" : "Category") +
         "</span>" +
         keyBadges(st) +
         '<span class="drill">Open ›</span></div>' +
@@ -973,7 +1057,7 @@ function renderArch() {
           .map(function (x) {
             return (
               '<div class="ci' +
-              (x.st ? " " + x.st : "") +
+              (x.st ? " " + esc(x.st) : "") +
               '"><span class="ico">' +
               ICON[stype(x.s)] +
               "</span>" +
@@ -997,8 +1081,8 @@ function renderArch() {
       var el = actorCard(a);
       cardLayer.appendChild(el);
       cardEls["act:" + a.id] = el;
-      var byCat = {};
-      (a.p.uses || []).forEach(function (u) {
+      var byCat = dict();
+      usesOf(a.p).forEach(function (u) {
         var c = catOf(u.to);
         if (c && cardEls["cat:" + c]) (byCat[c] = byCat[c] || []).push(u);
       });
@@ -1011,7 +1095,7 @@ function renderArch() {
         edgeEls.push(g);
       });
     });
-    var agg = {};
+    var agg = dict();
     vm.conns.forEach(function (c) {
       var a = catOf(c.c.from),
         b = catOf(c.c.to);
@@ -1085,21 +1169,21 @@ function renderArch() {
   mainZones
     .concat([[stubKeys, "Talks to, in other categories", "records"]])
     .forEach(function (z) {
-    if (!z[0].length) return;
-    var el = document.createElement("div");
-    el.className = "zone";
-    el.style.setProperty("--z", lvar(z[2]));
-    el.innerHTML = "<b>" + esc(z[1]) + "<span>" + z[0].length + "</span></b>";
-    zoneLayer.appendChild(el);
-    zoneEls.push({
-      el: el,
-      keys: z[0],
-      hFor: function (k) {
-        return SIZE[k].h;
-      },
-      w: SW,
+      if (!z[0].length) return;
+      var el = document.createElement("div");
+      el.className = "zone";
+      el.style.setProperty("--z", lvar(z[2]));
+      el.innerHTML = "<b>" + esc(z[1]) + "<span>" + z[0].length + "</span></b>";
+      zoneLayer.appendChild(el);
+      zoneEls.push({
+        el: el,
+        keys: z[0],
+        hFor: function (k) {
+          return SIZE[k].h;
+        },
+        w: SW,
+      });
     });
-  });
   if (!L.main.length) {
     var em = document.createElement("div");
     em.className = "zone";
@@ -1171,7 +1255,7 @@ function renderFlow() {
       cardEls["svc:" + n] = el2;
     }
   });
-  var pairCount = {};
+  var pairCount = dict();
   (f.steps || []).forEach(function (st, i) {
     var a = keyOf(st.from),
       b = keyOf(st.to);
@@ -1224,13 +1308,20 @@ function mkEdge(labelled) {
   svg.appendChild(g);
   return { g: g, p: p, m: m, o: o, t: t };
 }
-function place() {
-  Object.keys(cardEls).forEach(function (k) {
+function edgeEnds(g) {
+  return g.e ? [g.e.s, g.e.t] : [g.a, g.b];
+}
+// Positions every box, zone and edge; with `only`, just that box and the zones
+// and edges it is part of (a box being dragged).
+function place(only) {
+  (only ? [only] : Object.keys(cardEls)).forEach(function (k) {
+    if (!cardEls[k]) return;
     var q = posOf(k, DEF);
     cardEls[k].style.left = q.x + "px";
     cardEls[k].style.top = q.y + "px";
   });
   zoneEls.forEach(function (z) {
+    if (only && (z.fixed || z.keys.indexOf(only) === -1)) return;
     if (z.fixed) {
       z.box = z.fixed;
     } else {
@@ -1259,6 +1350,7 @@ function place() {
     z.el.style.height = z.box.h + "px";
   });
   edgeEls.forEach(function (g) {
+    if (only && edgeEnds(g).indexOf(only) === -1) return;
     if (g.e) {
       var S = posOf(g.e.s, DEF),
         G = posOf(g.e.t, DEF),
@@ -1427,14 +1519,7 @@ function place() {
 function matchKey(k) {
   if (!query) return false;
   if (view === "schema") {
-    var t = VM.T[k];
-    return (
-      !!t &&
-      (t.name.indexOf(query) !== -1 ||
-        t.cols.some(function (x) {
-          return x.c.name.indexOf(query) !== -1;
-        }))
-    );
+    return tableMatches(VM.T[k]);
   }
   if (k.indexOf("cat:") === 0) {
     var c = VM.cats.filter(function (x) {
@@ -1442,12 +1527,27 @@ function matchKey(k) {
     })[0];
     return !!c && c.c.name.toLowerCase().indexOf(query) !== -1;
   }
-  var s = VM.S[k.slice(4)];
+  return serviceMatches(VM.S[k.slice(4)]);
+}
+// The query is lower case; names are compared lower case too.
+function has(text) {
   return (
-    !!s &&
-    ((s.s.name || "").toLowerCase().indexOf(query) !== -1 ||
-      (s.s.tech || "").toLowerCase().indexOf(query) !== -1)
+    String(text || "")
+      .toLowerCase()
+      .indexOf(query) !== -1
   );
+}
+function tableMatches(t) {
+  return (
+    !!t &&
+    (has(t.name) ||
+      t.cols.some(function (x) {
+        return has(x.c.name);
+      }))
+  );
+}
+function serviceMatches(s) {
+  return !!s && has(s.s.name);
 }
 function related(k) {
   var set = new Set([k]);
@@ -1467,7 +1567,8 @@ function apply() {
     r.classList.remove("hl");
   });
   var fade = view === "schema" && $("fadePerson").checked;
-  if (per && view === "schema" && VM.PER[per]) {
+  // A persona dims the schema only when the data says which tables personas use.
+  if (per && view === "schema" && VM.PER[per] && VM.personaTables) {
     var pt = VM.PER[per].tables;
     Object.keys(cardEls).forEach(function (k) {
       var el = cardEls[k],
@@ -1505,7 +1606,13 @@ function apply() {
   } else {
     var f = hov || (sel && sel.view === view ? sel.key : null),
       rel = f ? related(f) : null,
-      fl = !f && (filtHover || FILT);
+      fl = !f && (filtHover || FILT),
+      fm = dict();
+    // Each box is checked against the filter once, not once per edge too.
+    var filtered = function (k) {
+      if (!(k in fm)) fm[k] = filterMatch(k, fl);
+      return fm[k];
+    };
     Object.keys(cardEls).forEach(function (k) {
       var el = cardEls[k],
         m = matchKey(k);
@@ -1515,7 +1622,7 @@ function apply() {
       el.classList.toggle("match", !f && m);
       el.classList.toggle(
         "dim",
-        rel ? !rel.has(k) : fl ? !filterMatch(k, fl) : !!query && !m,
+        rel ? !rel.has(k) : fl ? !filtered(k) : !!query && !m,
       );
     });
     edgeEls.forEach(function (g) {
@@ -1525,7 +1632,7 @@ function apply() {
       g.g.classList.toggle("hl", touch);
       g.g.classList.toggle(
         "dim",
-        f ? !touch : !!fl && !(filterMatch(a, fl) && filterMatch(b, fl)),
+        f ? !touch : !!fl && !(filtered(a) && filtered(b)),
       );
       g.g.classList.remove("other");
       g.g.classList.toggle("faint", !f && fade && g.e && g.e.t === "person");
@@ -1540,6 +1647,33 @@ function apply() {
   document.querySelectorAll("#personas .pchip").forEach(function (b) {
     b.setAttribute("aria-pressed", String(b.dataset.p === per));
   });
+  cardStates();
+}
+// The highlight is also said in words and shape, not colour alone: the selected
+// box is aria-current, and each box's label names its state.
+var STATE_TEXT = [
+  ["on", "selected"],
+  ["pon", "used by the persona"],
+  ["rel", "connected to the selection"],
+  ["match", "matches the search"],
+  ["dim", "faded"],
+];
+function cardStates() {
+  var selKey = sel && sel.view === view ? sel.key : null;
+  Object.keys(cardEls).forEach(function (k) {
+    var el = cardEls[k],
+      words = [];
+    STATE_TEXT.forEach(function (x) {
+      if (el.classList.contains(x[0])) words.push(x[1]);
+    });
+    var label =
+      (el.dataset.label || "") + (words.length ? ", " + words.join(", ") : "");
+    if (el.getAttribute("aria-label") !== label)
+      el.setAttribute("aria-label", label);
+    if (k === selKey) el.setAttribute("aria-current", "true");
+    else if (el.hasAttribute("aria-current"))
+      el.removeAttribute("aria-current");
+  });
 }
 
 // ---------- filter bar (status and type), IcePanel-style: hover highlights, click focuses
@@ -1548,10 +1682,7 @@ var FILT = null,
 function svcsForKey(k) {
   if (k.indexOf("svc:") === 0)
     return VM.S[k.slice(4)] ? [VM.S[k.slice(4)]] : [];
-  if (k.indexOf("cat:") === 0)
-    return VM.services.filter(function (x) {
-      return x.s.lane === k.slice(4);
-    });
+  if (k.indexOf("cat:") === 0) return VM.byLane[k.slice(4)] || [];
   return [];
 }
 function filterMatch(k, fl) {
@@ -1568,12 +1699,13 @@ function renderFilters() {
       '<span class="lg"><span class="k pk">PK</span>primary key</span><span class="lg"><span class="k fk" style="--zk:var(--edge)">FK</span>foreign key</span><span class="lg"><span class="k u">U</span>unique</span><span class="lg"><span class="k en">E</span>enum</span><span class="lg">crow\'s foot: many → one</span>';
     return;
   }
-  var pool = Object.keys(cardEls).reduce(function (acc, k) {
+  var seen = new Set();
+  Object.keys(cardEls).forEach(function (k) {
     svcsForKey(k).forEach(function (x) {
-      if (acc.indexOf(x) === -1) acc.push(x);
+      seen.add(x);
     });
-    return acc;
-  }, []);
+  });
+  var pool = Array.from(seen);
   function group(label, kname, values, val) {
     return (
       '<span class="fg"><span class="fl">' +
@@ -1609,14 +1741,9 @@ function renderFilters() {
   }
   var outsideN = view === "arch" && path.length ? levelSets().allStubs : 0;
   box.innerHTML =
-    group(
-      "Status",
-      "status",
-      ["live", "in build", "planned", "retiring", "external"],
-      function (x) {
-        return x.s.status || "live";
-      },
-    ) +
+    group("Status", "status", ["live", "planned", "retiring"], function (x) {
+      return x.s.status || "live";
+    }) +
     (showTypes
       ? group(
           "Type",
@@ -1683,7 +1810,39 @@ function renderFilters() {
 }
 
 // ---------- minimap
-var mini = null;
+var mini = null,
+  miniFrame = 0,
+  miniColours = null;
+// Drawn at most once a frame, however many pans, zooms and drags ask for it.
+function scheduleMini() {
+  if (miniFrame) return;
+  miniFrame = requestAnimationFrame(function () {
+    miniFrame = 0;
+    drawMini();
+  });
+}
+// The theme's colours, read once; a new brand or colour scheme clears them.
+function colours() {
+  if (!miniColours) {
+    var cs = getComputedStyle(document.documentElement);
+    miniColours = {
+      dot: cs.getPropertyValue("--dot").trim() || "#ccc",
+      accent: cs.getPropertyValue("--accent").trim() || "#2d6cdf",
+    };
+  }
+  return miniColours;
+}
+if (window.matchMedia)
+  try {
+    window
+      .matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener("change", function () {
+        miniColours = null;
+        scheduleMini();
+      });
+  } catch (e) {
+    /* old browsers: colours refresh on the next data load */
+  }
 function drawMini() {
   mini = mini || $("mini");
   if (!mini || mini.offsetParent === null) return;
@@ -1706,7 +1865,7 @@ function drawMini() {
           .filter(Boolean),
       ),
     ),
-    cs = getComputedStyle(document.documentElement);
+    cs = colours();
   var dpr = window.devicePixelRatio || 1,
     cw = mini.clientWidth,
     ch = mini.clientHeight;
@@ -1721,7 +1880,7 @@ function drawMini() {
     ox = (cw - b.w * sc) / 2 - b.x * sc,
     oy = (ch - b.h * sc) / 2 - b.y * sc;
   mini._map = { sc: sc, ox: ox, oy: oy };
-  ctx.fillStyle = cs.getPropertyValue("--dot").trim() || "#ccc";
+  ctx.fillStyle = cs.dot;
   boxes.forEach(function (r) {
     ctx.globalAlpha = cardEls[r.k].classList.contains("dim") ? 0.35 : 1;
     ctx.fillRect(
@@ -1733,7 +1892,7 @@ function drawMini() {
   });
   ctx.globalAlpha = 1;
   var vr = vp.getBoundingClientRect();
-  ctx.strokeStyle = cs.getPropertyValue("--accent").trim() || "#2d6cdf";
+  ctx.strokeStyle = cs.accent;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(
     ox + (-V.x / V.k) * sc,
@@ -1758,16 +1917,17 @@ function miniPan(ev) {
 var flowId = null,
   flowStep = 0;
 function enterFlow(id) {
+  if (!VM.FL[id]) return;
   flowId = id;
   flowStep = 0;
   view = "flow";
   sel = null;
   per = null;
   hov = null;
-  NAV = NAV.length ? NAV : [];
   render();
   fitAll();
   openFlow(id);
+  syncHash(true);
 }
 function openFlows() {
   var b =
@@ -1781,7 +1941,7 @@ function openFlows() {
             esc(x.id) +
             '" style="--z:var(--accent)"><i></i><span><b>' +
             esc(x.f.name) +
-            (x.st ? " · " + x.st : "") +
+            (x.st ? " · " + esc(x.st) : "") +
             "</b><small>" +
             esc(x.f.description || "") +
             " · " +
@@ -1804,7 +1964,7 @@ function openFlow(id) {
   if (!x) return;
   var steps = x.f.steps || [],
     cur = steps[flowStep] || {};
-  var b = DOCS[id]
+  var b = own(DOCS, id)
     ? docBlocks(id)
     : '<p class="lead">' + esc(x.f.description || "") + "</p>";
   b +=
@@ -1853,7 +2013,7 @@ function openFlow(id) {
       })
       .join("") +
     "</ol>";
-  showPanel(esc(x.f.name), b, false, { type: "flow", id: id });
+  showPanel(x.f.name || id, b, false, { type: "flow", id: id });
   $("fPrev").onclick = function () {
     stepTo(flowStep - 1);
   };
@@ -1891,10 +2051,10 @@ function stepTo(i) {
         { x: bx.x, y: bx.y, w: 240, h: 120 },
       ]),
       true,
+      1,
     );
-    V.k = Math.min(V.k, 1);
   }
-  drawMini();
+  scheduleMini();
 }
 
 // ---------- header, chips, legend
@@ -1950,7 +2110,7 @@ function renderChrome() {
           '<button type="button" class="chip" data-zone="' +
           esc(id) +
           '" style="--z:' +
-          zvar(id) +
+          esc(zvar(id)) +
           '"><i></i>' +
           esc(VM.areas[id].name) +
           " <span>" +
@@ -1959,33 +2119,10 @@ function renderChrome() {
         );
       })
       .join("");
-  } else {
-    chips.innerHTML = LANES.filter(function (l) {
-      return VM.services.some(function (s) {
-        return s.s.lane === l.id;
-      });
-    })
-      .map(function (l) {
-        var n = VM.services.filter(function (s) {
-          return s.s.lane === l.id;
-        }).length;
-        return (
-          '<button type="button" class="chip" data-lane="' +
-          l.id +
-          '" style="--z:' +
-          lvar(l.id) +
-          '"><i></i>' +
-          esc(l.name) +
-          " <span>" +
-          n +
-          "</span></button>"
-        );
-      })
-      .join("");
-  }
+  } else chips.innerHTML = ""; // the area chips are a schema-only row
   chips.querySelectorAll(".chip").forEach(function (b, i) {
     b.onclick = function () {
-      fitTo(zoneEls[i].box);
+      if (zoneEls[i] && zoneEls[i].box) fitTo(zoneEls[i].box);
     };
   });
   var pn = $("personas");
@@ -2003,8 +2140,7 @@ function renderChrome() {
           esc(x.p.blurb || "") +
           '">' +
           esc(x.p.name) +
-          " · " +
-          Object.keys(x.tables).length +
+          (VM.personaTables ? " · " + Object.keys(x.tables).length : "") +
           (x.st ? " ●" : "") +
           "</button>"
         );
@@ -2021,11 +2157,38 @@ function renderChrome() {
 // ---------- side panel
 // Drawer history: every panel opened is pushed, so Back returns to the previous one.
 var NAV = [],
-  restoring = false;
+  restoring = false,
+  // What the open drawer shows, the element focused before it opened (and the
+  // box that opened it, in case a redraw replaced that element).
+  panelSt = null,
+  opener = null,
+  openerKey = null,
+  lastActivated = null,
+  // Set while a drawer is redrawn without the person asking (a dev reload).
+  quietPanel = false;
+// The focused element inside the drawer, as a selector that finds its twin after a redraw.
+function focusRef(el) {
+  if (el.id) return "#" + el.id;
+  if (el.dataset && el.dataset.step != null)
+    return '[data-step="' + el.dataset.step + '"]';
+  return null;
+}
+// `title` is plain text; `body` is HTML built with esc().
 function showPanel(title, body, mono, st) {
   if (!restoring && st) {
     var top = NAV[NAV.length - 1];
     if (!top || !same(top, st)) NAV.push(st);
+  }
+  var wasOpen = !panel.hidden,
+    refresh = wasOpen && !!st && !!panelSt && same(panelSt, st),
+    active = document.activeElement,
+    keep = active && panel.contains(active) ? focusRef(active) : null;
+  if (!wasOpen) {
+    opener =
+      active && active !== document.body && !panel.contains(active)
+        ? active
+        : null;
+    openerKey = lastActivated;
   }
   var prev = NAV.length > 1 ? NAV[NAV.length - 2] : null;
   var back = prev
@@ -2036,21 +2199,30 @@ function showPanel(title, body, mono, st) {
   panel.innerHTML =
     '<div class="ph">' +
     back +
-    "<h2" +
+    '<h2 id="panelTitle" tabindex="-1"' +
     (mono ? ' class="mono"' : "") +
     ">" +
-    title +
+    esc(title) +
     '</h2><button type="button" class="x" id="close" aria-label="Close details">Close</button></div>' +
     body;
   panel.hidden = false;
-  panel.scrollTop = 0;
+  panelSt = st || null;
+  if (!refresh) panel.scrollTop = 0;
   // Start here sits above the drawer, so it closes whenever a drawer opens.
   showStart(false);
-  $("close").onclick = clearSel;
+  $("close").onclick = function () {
+    clearSel(true);
+  };
   if ($("back")) $("back").onclick = goBack;
   panel.querySelectorAll("[data-go]").forEach(function (b) {
     b.onclick = function () {
-      goTo(b.getAttribute("data-go"));
+      // Following a link in the drawer is a step Back can undo.
+      pushNext = true;
+      try {
+        goTo(b.getAttribute("data-go"));
+      } finally {
+        pushNext = false;
+      }
     };
   });
   panel.querySelectorAll("[data-persona]").forEach(function (b) {
@@ -2059,6 +2231,29 @@ function showPanel(title, body, mono, st) {
       selectPersona(b.getAttribute("data-persona"));
     };
   });
+  // Only the title is announced, not the whole drawer.
+  if (!refresh && !quietPanel) $("live").textContent = title;
+  // Focus stays on the same control when the drawer is redrawn in place (a
+  // flow step); otherwise it moves to the drawer's heading.
+  var again = keep && panel.querySelector(keep);
+  if (again && !again.disabled) again.focus({ preventScroll: true });
+  else if (keep || (!refresh && !quietPanel))
+    $("panelTitle").focus({ preventScroll: true });
+}
+function hidePanel() {
+  panel.hidden = true;
+  panelSt = null;
+}
+function restoreFocus() {
+  var el =
+    opener && opener.isConnected
+      ? opener
+      : openerKey && cardEls[openerKey]
+        ? cardEls[openerKey]
+        : null;
+  opener = null;
+  openerKey = null;
+  if (el && el.focus) el.focus({ preventScroll: true });
 }
 function navLabel(st) {
   return (
@@ -2115,6 +2310,7 @@ function goBack() {
 }
 function goTo(ref) {
   // ref: "table:x", "service:x", "column:t.c", "enum:x", "persona:x", "area:x", "connection:x"
+  if (!VM || typeof ref !== "string" || ref.indexOf(":") < 1) return;
   var i = ref.indexOf(":"),
     kind = ref.slice(0, i),
     id = ref.slice(i + 1);
@@ -2123,8 +2319,8 @@ function goTo(ref) {
     id = id.split(".")[0];
   }
   if (kind === "connection") {
-    var c = VM.B.connections[id];
-    if (!c) return;
+    var c = own(VM.B.connections, id);
+    if (!c || !VM.S[c.from]) return;
     kind = "service";
     id = c.from;
   }
@@ -2134,11 +2330,13 @@ function goTo(ref) {
     return;
   }
   if (kind === "persona") {
+    if (!VM.PER[id]) return;
     if (view !== "schema") setView("schema");
-    selectPersona(id);
+    if (per !== id) selectPersona(id);
     return;
   }
   if (kind === "table") {
+    if (!VM.T[id]) return;
     if (view !== "schema") setView("schema");
     if (VM.T[id]) {
       select(id);
@@ -2166,9 +2364,9 @@ function goTo(ref) {
 // A doc's text: the summary, "How it works", and "For developers" with its code paths.
 // The text is HTML that `archmap build` rendered from the doc's markdown.
 function docBlocks(id) {
-  var d = DOCS[id];
+  var d = own(DOCS, id);
   if (!d) return "";
-  var code = d.code || [],
+  var code = Array.isArray(d.code) ? d.code : [],
     b = d.summary ? '<div class="doc lead">' + d.summary + "</div>" : "";
   if (d.how) b += '<h3>How it works</h3><div class="doc">' + d.how + "</div>";
   if (d.dev || code.length)
@@ -2192,7 +2390,7 @@ function linkBtn(ref, title, sub, z) {
     '<button type="button" class="lnk" data-go="' +
     esc(ref) +
     '" style="--z:' +
-    z +
+    esc(z) +
     '"><i></i><span><b>' +
     esc(title) +
     "</b><small>" +
@@ -2202,22 +2400,22 @@ function linkBtn(ref, title, sub, z) {
 }
 function openTable(name) {
   var t = VM.T[name],
-    vm = VM,
-    area = vm.areas[t.t.area] || { name: t.t.area };
-  var out = {},
-    inc = {};
+    vm = VM;
+  if (!t) return;
+  var area = vm.areas[t.t.area] || { name: t.t.area };
+  var out = dict(),
+    inc = dict();
   vm.edges.forEach(function (e) {
     if (e.s === name) (out[e.t] = out[e.t] || []).push(e.col);
     if (e.t === name) (inc[e.s] = inc[e.s] || []).push(e.col);
   });
   var b =
     '<div class="meta"><span class="pill" style="--z:' +
-    zvar(t.t.area) +
+    esc(zvar(t.t.area)) +
     '"><i></i>' +
     esc(area.name) +
     "</span>" +
-    (t.t.append ? '<span class="pill">append-only</span>' : "") +
-    (t.st ? '<span class="pill">' + t.st + "</span>" : "") +
+    (t.st ? '<span class="pill">' + esc(t.st) + "</span>" : "") +
     '<span class="pill">' +
     t.cols.length +
     " columns</span></div>";
@@ -2267,36 +2465,37 @@ function openTable(name) {
   var users = vm.personas.filter(function (x) {
     return x.tables[name];
   });
-  b +=
-    "<h3>Used by personas · " +
-    users.length +
-    "</h3>" +
-    (users.length
-      ? '<div class="links">' +
-        users
-          .map(function (x) {
-            var jobs = (x.p.jobs || [])
-              .filter(function (j) {
-                return j.t && j.t[name];
-              })
-              .map(function (j) {
-                return j.job;
-              });
-            return (
-              '<button type="button" class="lnk" data-persona="' +
-              esc(x.id) +
-              '" style="--z:var(--persona)"><i></i><span><b>' +
-              esc(x.p.name) +
-              " · " +
-              (x.tables[name] === "w" ? "writes" : "reads") +
-              "</b><small>" +
-              esc(jobs.join("; ")) +
-              "</small></span></button>"
-            );
-          })
-          .join("") +
-        "</div>"
-      : '<p class="small">No persona works with this table directly.</p>');
+  if (vm.personaTables)
+    b +=
+      "<h3>Used by personas · " +
+      users.length +
+      "</h3>" +
+      (users.length
+        ? '<div class="links">' +
+          users
+            .map(function (x) {
+              var jobs = (x.p.jobs || [])
+                .filter(function (j) {
+                  return j.t && j.t[name];
+                })
+                .map(function (j) {
+                  return j.job;
+                });
+              return (
+                '<button type="button" class="lnk" data-persona="' +
+                esc(x.id) +
+                '" style="--z:var(--persona)"><i></i><span><b>' +
+                esc(x.p.name) +
+                " · " +
+                (x.tables[name] === "w" ? "writes" : "reads") +
+                "</b><small>" +
+                esc(jobs.join("; ")) +
+                "</small></span></button>"
+              );
+            })
+            .join("") +
+          "</div>"
+        : '<p class="small">No persona works with this table directly.</p>');
   b += "<h3>Columns</h3>";
   t.cols.forEach(function (x) {
     var c = x.c,
@@ -2305,10 +2504,10 @@ function openTable(name) {
     if (c.pk) tags.push("primary key");
     if (c.unique) tags.push("unique");
     if (c.fk) tags.push("→ " + c.fk);
-    var en = c.enum ? m.enums[c.enum] || {} : null;
+    var en = c.enum ? own(m.enums, c.enum) || {} : null;
     b +=
       '<div class="col' +
-      (x.st ? " " + x.st : "") +
+      (x.st ? " " + esc(x.st) : "") +
       '"><div class="cl1"><code>' +
       esc(c.name) +
       '</code><span class="t">' +
@@ -2328,27 +2527,26 @@ function openTable(name) {
     b += "</div>";
   });
   b +=
-    '<div class="col"><div class="cl1"><code>created_at</code><span class="t">timestamptz</span></div><p>When the row was written. Every table has it.</p></div>';
-  if (!t.t.append)
-    b +=
-      '<div class="col"><div class="cl1"><code>updated_at</code><span class="t">timestamptz</span></div><p>Last change; doubles as the edit-conflict check.</p></div>';
-  showPanel(esc(name), b, true, { type: "table", id: name });
+    '<div class="col"><div class="cl1"><code>created_at</code><span class="t">timestamptz</span></div><p>When the row was written. Every table has it.</p></div>' +
+    '<div class="col"><div class="cl1"><code>updated_at</code><span class="t">timestamptz</span></div><p>Last change; doubles as the edit-conflict check.</p></div>';
+  showPanel(name, b, true, { type: "table", id: name });
 }
 function openService(id) {
   var x = VM.S[id],
-    s = x.s,
     vm = VM;
+  if (!x) return;
+  var s = x.s;
   var b =
     '<div class="meta"><span class="pill" style="--z:' +
-    lvar(catOf(id)) +
+    esc(lvar(catOf(id))) +
     '"><i></i>' +
     esc(catName(catOf(id))) +
     "</span>" +
     (s.status ? '<span class="pill">' + esc(s.status) + "</span>" : "") +
-    (x.st ? '<span class="pill">' + x.st + "</span>" : "") +
+    (x.st ? '<span class="pill">' + esc(x.st) + "</span>" : "") +
     "</div>";
   var parent = s.parent && vm.S[s.parent];
-  if (DOCS[id]) b += docBlocks(id);
+  if (own(DOCS, id)) b += docBlocks(id);
   else if (parent)
     b +=
       "<h3>Part of</h3>" +
@@ -2361,26 +2559,6 @@ function openService(id) {
       ) +
       "</div>";
   else b += '<p class="lead">' + esc(s.purpose || "") + "</p>";
-  if (s.tech)
-    b +=
-      '<p class="small"><b>' +
-      esc(TYPE_LABEL[stype(s)] || "Tech") +
-      ":</b> " +
-      esc(s.tech) +
-      "</p>";
-  if (s.owner) b += '<p class="small"><b>Owner:</b> ' + esc(s.owner) + "</p>";
-  if (s.env)
-    b += '<p class="small"><b>Environments:</b> ' + esc(s.env) + "</p>";
-  if (s.facts && s.facts.length)
-    b +=
-      '<h3>Facts</h3><dl class="facts">' +
-      s.facts
-        .map(function (f) {
-          return "<dt>" + esc(f.k) + "</dt><dd>" + esc(f.v) + "</dd>";
-        })
-        .join("") +
-      "</dl>";
-  if (s.notes) b += '<p class="note open">' + esc(s.notes) + "</p>";
   // Parts, docs and history stay off the drawer to keep it short; parts open by drilling into the box.
   if (s.opens === "schema" && layerCount("data") === 0) b += emptyState("data");
   else if (s.opens === "schema")
@@ -2432,7 +2610,7 @@ function openService(id) {
           .join("") +
         "</div>"
       : '<p class="small">None.</p>');
-  showPanel(esc(s.name), b, false, { type: "service", id: id });
+  showPanel(s.name || id, b, false, { type: "service", id: id });
   if ($("openSchema"))
     $("openSchema").onclick = function () {
       clearSel();
@@ -2440,47 +2618,34 @@ function openService(id) {
     };
 }
 function openPersona(id) {
-  var x = VM.PER[id],
-    p = x.p,
+  var x = VM.PER[id];
+  if (!x) return;
+  var p = x.p,
+    jobs = Array.isArray(p.jobs) ? p.jobs : [],
     names = Object.keys(x.tables),
     nw = names.filter(function (n) {
       return x.tables[n] === "w";
     }).length;
-  var open = (p.jobs || []).filter(function (j) {
-    return (j.gap && !j.fix) || j.open;
-  }).length;
   var b =
     '<div class="meta">' +
     (p.kind ? '<span class="pill">' + esc(p.kind) + "</span>" : "") +
     (p.who ? '<span class="pill">' + esc(p.who) + "</span>" : "") +
-    '<span class="pill">' +
-    names.length +
-    " tables · writes " +
-    nw +
-    '</span><span class="pill">' +
-    open +
-    " open</span></div>";
-  b += DOCS[id]
+    (VM.personaTables
+      ? '<span class="pill">' +
+        names.length +
+        " tables · writes " +
+        nw +
+        "</span>"
+      : "") +
+    "</div>";
+  b += own(DOCS, id)
     ? docBlocks(id)
     : '<p class="lead">' + esc(p.blurb || "") + "</p>";
-  if (p.subtypes && p.subtypes.length)
-    b +=
-      "<h3>Subtypes</h3>" +
-      p.subtypes
-        .map(function (s) {
-          return (
-            '<p class="small"><b>' +
-            esc(s.name) +
-            ".</b> " +
-            esc(s.note) +
-            "</p>"
-          );
-        })
-        .join("");
-  b += "<h3>Jobs to be done · " + (p.jobs || []).length + "</h3>";
-  (p.jobs || []).forEach(function (j) {
-    var keys = Object.keys(j.t || {});
-    b += '<div class="job"><p>' + esc(j.job) + "</p>";
+  b += "<h3>Jobs to be done · " + jobs.length + "</h3>";
+  jobs.forEach(function (j) {
+    var t = j && j.t && typeof j.t === "object" ? j.t : {},
+      keys = Object.keys(t);
+    b += '<div class="job"><p>' + esc(j && j.job) + "</p>";
     if (keys.length)
       b +=
         '<div class="tl">' +
@@ -2488,7 +2653,7 @@ function openPersona(id) {
           .map(function (n) {
             return (
               '<button type="button" class="tchip ' +
-              j.t[n] +
+              (t[n] === "w" ? "w" : "r") +
               '" data-go="table:' +
               esc(n) +
               '">' +
@@ -2498,15 +2663,7 @@ function openPersona(id) {
           })
           .join("") +
         "</div>";
-    if (j.gap) b += '<p class="note gap"><b>Gap:</b> ' + esc(j.gap) + "</p>";
-    if (j.fix)
-      b +=
-        '<p class="note ' +
-        (j.open ? "open" : "fix") +
-        '">' +
-        esc(j.fix) +
-        "</p>";
-    if (j.note) b += '<p class="small">' + esc(j.note) + "</p>";
+    if (j && j.note) b += '<p class="small">' + esc(j.note) + "</p>";
     b += "</div>";
   });
   if (p.source)
@@ -2514,13 +2671,13 @@ function openPersona(id) {
       '<p class="small">Source: ' +
       esc(p.source) +
       ". Filled chips: the persona writes; outlined: reads.</p>";
-  showPanel(esc(p.name), b, false, { type: "persona", id: id });
+  showPanel(p.name || id, b, false, { type: "persona", id: id });
 }
 function openEnums(focus) {
   var B = VM.B,
     names = Object.keys(B.enums);
   names.sort();
-  var uses = {};
+  var uses = dict();
   Object.keys(B.tables).forEach(function (t) {
     B.tables[t].columns.forEach(function (c) {
       if (c.enum) (uses[c.enum] = uses[c.enum] || []).push(t + "." + c.name);
@@ -2592,6 +2749,7 @@ function openProblems() {
   );
 }
 function activate(key) {
+  lastActivated = key;
   if (view === "schema") {
     select(key);
     return;
@@ -2629,11 +2787,12 @@ function activate(key) {
     sel = null;
     per = null;
     hov = null;
-    panel.hidden = true;
+    hidePanel();
     NAV = [];
     render();
     fitAll();
     openService(id);
+    syncHash(true);
     return;
   }
   if (childrenOf(id).length) {
@@ -2649,10 +2808,11 @@ function drill(p) {
   sel = null;
   per = null;
   hov = null;
-  panel.hidden = true;
+  hidePanel();
   NAV = [];
   render();
   fitAll();
+  syncHash(true);
 }
 function schemaPath() {
   var pg = VM.services.filter(function (x) {
@@ -2716,19 +2876,22 @@ function select(key) {
   apply();
   if (view === "schema") openTable(key);
   else openService(key.slice(4));
+  syncHash(false);
 }
 function selectPersona(id) {
   if (per === id) {
     clearSel();
     return;
   }
+  if (!VM.PER[id]) return;
   per = id;
   sel = null;
   hov = null;
   apply();
   openPersona(id);
+  syncHash(false);
   var keys = Object.keys(VM.PER[id].tables).filter(function (k) {
-    return cardEls[k];
+    return cardEls[k] && VM.T[k];
   });
   if (keys.length)
     fitTo(
@@ -2741,12 +2904,16 @@ function selectPersona(id) {
       true,
     );
 }
-function clearSel() {
+// Closes the drawer; with restore (Close or Escape), focus goes back to what opened it.
+function clearSel(restore) {
+  var wasOpen = !panel.hidden;
   sel = null;
   per = null;
   NAV = [];
-  panel.hidden = true;
+  hidePanel();
   apply();
+  syncHash(false);
+  if (restore === true && wasOpen) restoreFocus();
 }
 function setView(v) {
   if (view === v) return;
@@ -2756,17 +2923,108 @@ function setView(v) {
   sel = null;
   per = null;
   hov = null;
-  panel.hidden = true;
+  hidePanel();
   render();
   fitAll();
+  syncHash(true);
 }
+
+// ---------- the URL: #schema, #c-<category>, #in-<service>, #s-<service>,
+// #t-<table>, #p-<persona>, #flow-<flow>. Selecting replaces the entry;
+// drilling in or following a link in the drawer adds one, so Back returns.
+var routing = false,
+  pushNext = false,
+  lastHash = location.hash;
+function hashFor() {
+  var e = encodeURIComponent;
+  if (view === "flow") return VM.FL[flowId] ? "flow-" + e(flowId) : "";
+  if (view === "schema") {
+    if (per && VM.PER[per]) return "p-" + e(per);
+    if (sel && sel.view === "schema") return "t-" + e(sel.key);
+    return "schema";
+  }
+  if (sel && sel.view === "arch" && sel.key.indexOf("svc:") === 0)
+    return "s-" + e(sel.key.slice(4));
+  if (!path.length) return "";
+  if (path.length === 1) return "c-" + e(path[0]);
+  return "in-" + e(path[path.length - 1]);
+}
+function syncHash(push) {
+  push = push || pushNext;
+  pushNext = false;
+  if (routing || !VM) return;
+  var h = hashFor();
+  if ((h ? "#" + h : "") === location.hash) return;
+  try {
+    history[push ? "pushState" : "replaceState"](
+      null,
+      "",
+      h ? "#" + h : location.pathname + location.search,
+    );
+  } catch (e) {
+    /* a sandboxed page can't write history */
+  }
+  lastHash = location.hash;
+}
+// Goes where a hash points; anything it doesn't name is ignored.
+function applyHash(raw) {
+  if (!VM) return;
+  var h = String(raw || "").replace(/^#/, ""),
+    m = /^(t|s|c|in|p|flow)-(.+)$/.exec(h),
+    id = null;
+  if (m)
+    try {
+      id = decodeURIComponent(m[2]);
+    } catch (e) {
+      return;
+    }
+  routing = true;
+  try {
+    if (!h) {
+      if (view !== "arch" || path.length) drill([]);
+      clearSel();
+    } else if (h === "schema") {
+      if (view !== "schema") setView("schema");
+      clearSel();
+    } else if (!m) return;
+    else if (m[1] === "t") goTo("table:" + id);
+    else if (m[1] === "s") goTo("service:" + id);
+    else if (m[1] === "p") goTo("persona:" + id);
+    else if (m[1] === "flow") {
+      if (view !== "flow" || flowId !== id) enterFlow(id);
+    } else if (m[1] === "c") {
+      if (
+        VM.cats.some(function (c) {
+          return c.id === id;
+        })
+      )
+        drill([id]);
+    } else if (m[1] === "in" && VM.S[id] && childrenOf(id).length) {
+      drill(pathFor(id).concat([id]));
+      openService(id);
+    }
+  } finally {
+    routing = false;
+    lastHash = location.hash;
+  }
+}
+function onRoute() {
+  if (location.hash === lastHash) return;
+  showStart(false);
+  applyHash(location.hash);
+}
+window.addEventListener("popstate", onRoute);
+window.addEventListener("hashchange", onRoute);
 
 // ---------- pan and zoom
 var V = { x: 0, y: 0, k: 1 };
+// Controls drawn over the map: pointers and wheels on them don't pan or zoom it.
+var OVERLAYS =
+  ".panel, .controls, .bottombar, .mini, .legend, .msg div, .start";
 function setT() {
   world.style.transform =
     "translate(" + V.x + "px," + V.y + "px) scale(" + V.k + ")";
-  drawMini();
+  scheduleMini();
 }
 function zoomAt(px, py, k) {
   k = Math.max(0.12, Math.min(2.2, k));
@@ -2788,7 +3046,8 @@ function bounds(list) {
   });
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
-function fitTo(b, leavePanel) {
+// Fits the box in the view, zoomed in no further than maxK (1.2 by default).
+function fitTo(b, leavePanel, maxK) {
   if (!b || !isFinite(b.w)) return;
   var r = vp.getBoundingClientRect(),
     m = 40,
@@ -2800,7 +3059,7 @@ function fitTo(b, leavePanel) {
   }
   var k = Math.max(
     0.12,
-    Math.min(1.2, Math.min((w - m * 2) / b.w, (h - m * 2) / b.h)),
+    Math.min(maxK || 1.2, Math.min((w - m * 2) / b.w, (h - m * 2) / b.h)),
   );
   V.k = k;
   V.x = (w - b.w * k) / 2 - b.x * k;
@@ -2823,12 +3082,13 @@ function fitAll() {
   if (boxes.length) fitTo(bounds(boxes));
 }
 function centerOn(key) {
+  var q = posOf(key, DEF);
+  if (!q || !cardEls[key]) return;
   var r = vp.getBoundingClientRect(),
-    q = posOf(key, DEF),
     w = view === "schema" ? W : (SIZE[key] || { w: SW }).w,
     h =
       view === "schema"
-        ? Math.min(VM.T[key].h, 300)
+        ? Math.min(VM.T[key] ? VM.T[key].h : SH, 300)
         : (SIZE[key] || { h: SH }).h;
   var k = Math.max(V.k, 0.8),
     vw = panel.hidden || r.width <= 720 ? r.width : r.width - 400,
@@ -2859,8 +3119,7 @@ $("reset").onclick = function () {
 vp.addEventListener(
   "wheel",
   function (ev) {
-    if (ev.target.closest(".panel, .legend, .controls, .msg div, .start"))
-      return;
+    if (ev.target.closest(OVERLAYS)) return;
     ev.preventDefault();
     var r = vp.getBoundingClientRect(),
       unit = ev.deltaMode === 1 ? 16 : 1,
@@ -2902,9 +3161,43 @@ vp.addEventListener("dragstart", function (ev) {
 });
 var pointers = new Map(),
   drag = null,
+  pinch = null,
+  dragFrame = 0;
+// Moves the dragged box once a frame, with only its own zones and edges.
+function scheduleDrag() {
+  if (dragFrame) return;
+  dragFrame = requestAnimationFrame(function () {
+    dragFrame = 0;
+    if (drag && drag.kind === "card") {
+      place(drag.key);
+      scheduleMini();
+    }
+  });
+}
+function flushDrag() {
+  if (!dragFrame) return;
+  cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
+  if (drag && drag.kind === "card") place(drag.key);
+}
+// Stops any pan, pinch or box drag in progress (the map was redrawn under it).
+function cancelDrag() {
+  if (dragFrame) cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
+  pointers.forEach(function (_, id) {
+    try {
+      if (vp.hasPointerCapture(id)) vp.releasePointerCapture(id);
+    } catch (e) {
+      /* already released */
+    }
+  });
+  pointers.clear();
+  drag = null;
   pinch = null;
+  vp.classList.remove("panning");
+}
 vp.addEventListener("pointerdown", function (ev) {
-  if (ev.target.closest(".panel, .controls, .legend, .msg div, .start")) return;
+  if (ev.target.closest(OVERLAYS)) return;
   // Stops the browser starting a text selection while the canvas is dragged.
   if (ev.pointerType === "mouse") {
     ev.preventDefault();
@@ -2922,8 +3215,8 @@ vp.addEventListener("pointerdown", function (ev) {
   var card = ev.target.closest(".card");
   // Dragging a box moves it (a click without moving still opens it); dragging
   // the empty canvas moves the canvas.
-  if (card) {
-    var q = posOf(card.dataset.key, DEF);
+  var q = card && cardEls[card.dataset.key] && posOf(card.dataset.key, DEF);
+  if (q) {
     drag = {
       kind: "card",
       key: card.dataset.key,
@@ -2936,8 +3229,7 @@ vp.addEventListener("pointerdown", function (ev) {
   } else {
     drag = {
       kind: "pan",
-      // A click on a box (no movement) still opens it.
-      key: card ? card.dataset.key : null,
+      key: null,
       sx: ev.clientX,
       sy: ev.clientY,
       ox: V.x,
@@ -2946,7 +3238,11 @@ vp.addEventListener("pointerdown", function (ev) {
     };
     vp.classList.add("panning");
   }
-  vp.setPointerCapture(ev.pointerId);
+  try {
+    vp.setPointerCapture(ev.pointerId);
+  } catch (e) {
+    /* the pointer is already gone */
+  }
 });
 vp.addEventListener("pointermove", function (ev) {
   if (pointers.has(ev.pointerId))
@@ -2984,18 +3280,20 @@ vp.addEventListener("pointermove", function (ev) {
       x: Math.round(drag.ox + dx / V.k),
       y: Math.round(drag.oy + dy / V.k),
     };
-    place();
+    scheduleDrag();
   }
 });
 function end(ev) {
   pointers.delete(ev.pointerId);
   if (pointers.size < 2) pinch = null;
   if (!drag) return;
-  if (!drag.moved && drag.key) activate(drag.key);
-  else if (drag.kind === "card") savePos();
-  else if (!drag.moved && (sel || per)) clearSel();
+  flushDrag();
+  var d = drag;
   drag = null;
   vp.classList.remove("panning");
+  if (!d.moved && d.key) activate(d.key);
+  else if (d.kind === "card") savePos();
+  else if (!d.moved && (sel || per)) clearSel();
 }
 vp.addEventListener("pointerup", end);
 vp.addEventListener("pointercancel", end);
@@ -3012,8 +3310,37 @@ cardLayer.addEventListener("keydown", function (ev) {
     activate(c.dataset.key);
   }
 });
+// A box reached with Tab is brought into view by panning the map; the browser's
+// own scroll of the viewport (which clips the map) is undone.
+vp.addEventListener("focusin", function (ev) {
+  var c = ev.target.closest && ev.target.closest(".card");
+  if (!c || cardEls[c.dataset.key] !== c) return;
+  var keyboard = true;
+  try {
+    keyboard = c.matches(":focus-visible");
+  } catch (e) {
+    keyboard = true;
+  }
+  var reset = function () {
+    vp.scrollTop = 0;
+    vp.scrollLeft = 0;
+  };
+  reset();
+  requestAnimationFrame(reset);
+  if (!keyboard) return;
+  var r = c.getBoundingClientRect(),
+    v = vp.getBoundingClientRect(),
+    right = panel.hidden || v.width <= 720 ? v.right : v.right - 400;
+  if (
+    r.left < v.left ||
+    r.top < v.top ||
+    r.right > right ||
+    r.bottom > v.bottom
+  )
+    centerOn(c.dataset.key);
+});
 document.addEventListener("keydown", function (ev) {
-  if (ev.key === "Escape") clearSel();
+  if (ev.key === "Escape") clearSel(true);
   if (
     view === "flow" &&
     !/INPUT|TEXTAREA|SELECT/.test((ev.target && ev.target.tagName) || "")
@@ -3034,24 +3361,18 @@ $("q").addEventListener("keydown", function (ev) {
   var hit = Object.keys(cardEls).filter(matchKey)[0];
   if (!hit) {
     // look in the other view
-    var svc = VM.services.filter(function (s) {
-      return (
-        (s.s.name || "").toLowerCase().indexOf(query) !== -1 ||
-        (s.s.tech || "").toLowerCase().indexOf(query) !== -1
-      );
-    })[0];
-    var tbl = VM.tables.filter(function (t) {
-      return (
-        t.name.indexOf(query) !== -1 ||
-        t.cols.some(function (x) {
-          return x.c.name.indexOf(query) !== -1;
-        })
-      );
-    })[0];
+    var svc = VM.services.filter(serviceMatches)[0];
+    var tbl = VM.tables.filter(tableMatches)[0];
     if (view === "schema" ? svc : !tbl && svc) goTo("service:" + svc.id);
     else if (tbl) goTo("table:" + tbl.name);
     return;
   }
+  // A category or persona opens the way a click on it does.
+  if (/^(cat|act):/.test(hit)) {
+    activate(hit);
+    return;
+  }
+  lastActivated = hit;
   select(hit);
   centerOn(hit);
 });
@@ -3134,18 +3455,33 @@ function onData() {
   render();
   if (!firstFit) {
     firstFit = true;
-    var h = (location.hash || "").slice(1);
+    var h = location.hash || "";
     // A link to a place on the map goes there; otherwise the README comes first.
-    showStart(!h);
-    if (h === "schema") setView("schema");
+    showStart(h.length < 2);
     requestAnimationFrame(function () {
       fitAll();
-      if (h.indexOf("t-") === 0 && VM.T[h.slice(2)])
-        goTo("table:" + h.slice(2));
-      if (h.indexOf("s-") === 0 && VM.S[h.slice(2)])
-        goTo("service:" + h.slice(2));
+      applyHash(h);
     });
   }
+}
+// Redraws the open drawer after new data, if what it shows is still on the map.
+function reopenPanel(st) {
+  if (!st) return false;
+  if (st.type === "table") return !!VM.T[st.id] && (openTable(st.id), true);
+  if (st.type === "service") return !!VM.S[st.id] && (openService(st.id), true);
+  if (st.type === "persona")
+    return !!VM.PER[st.id] && (openPersona(st.id), true);
+  if (st.type === "flow") {
+    var f = VM.FL[st.id];
+    if (!f || view !== "flow" || flowId !== st.id) return false;
+    flowStep = Math.max(0, Math.min(flowStep, (f.f.steps || []).length - 1));
+    openFlow(st.id);
+    return true;
+  }
+  if (st.type === "flows") return (openFlows(), true);
+  if (st.type === "enums") return (openEnums(st.id), true);
+  if (st.type === "problems") return (openProblems(), true);
+  return false;
 }
 window.addEventListener("resize", function () {
   if (!sel && !per) fitAll();
@@ -3158,23 +3494,28 @@ function applyBrand(cfg) {
     product = CONFIG.product || "Architecture map";
   document.title = name + " · " + product;
   $("title").textContent = name;
-  if (CONFIG.logo) {
-    $("logo").src = CONFIG.logo;
+  var logo = safeHref(CONFIG.logo);
+  if (logo) {
+    $("logo").src = logo;
     $("logo").hidden = false;
   } else $("logo").hidden = true;
-  $("hlinks").innerHTML = (CONFIG.links || [])
+  // The build drops unsafe links too; this is the second check.
+  $("hlinks").innerHTML = (Array.isArray(CONFIG.links) ? CONFIG.links : [])
     .map(function (l) {
-      return (
-        '<a href="' +
-        esc(l.url) +
-        '" target="_blank" rel="noopener">' +
-        esc(l.label) +
-        "</a>"
-      );
+      var href = l && safeHref(l.url);
+      return href
+        ? '<a href="' +
+            esc(href) +
+            '" target="_blank" rel="noopener noreferrer">' +
+            esc(l.label) +
+            "</a>"
+        : "";
     })
     .join("");
-  if (CONFIG.fonts && CONFIG.fonts.stylesheet)
-    $("fontsheet").href = CONFIG.fonts.stylesheet;
+  var sheet = CONFIG.fonts && safeStylesheet(CONFIG.fonts.stylesheet);
+  if (sheet && $("fontsheet").getAttribute("href") !== sheet)
+    $("fontsheet").href = sheet;
+  miniColours = null;
   function block(vars) {
     return Object.keys(vars || {})
       .filter(function (k) {
@@ -3206,9 +3547,19 @@ function applyBrand(cfg) {
 }
 var rev = null;
 function load(data) {
+  var again = !!VM,
+    active = document.activeElement,
+    focusCard =
+      active && active.closest && active.closest(".card")
+        ? active.closest(".card").dataset.key
+        : null,
+    drawer = panel.hidden ? null : NAV[NAV.length - 1] || panelSt;
+  // New data redraws every box: a drag or pan in progress would hold a stale one.
+  cancelDrag();
+  hov = null;
   applyBrand(data.config);
   MODEL = data.model || emptyModel();
-  DOCS = data.docs || {};
+  DOCS = data.docs || dict();
   CHECK = {
     errors: (data.check && data.check.errors) || [],
     warnings: (data.check && data.check.warnings) || [],
@@ -3216,9 +3567,30 @@ function load(data) {
   README = data.readme || "";
   PUBLIC = !!data.public;
   rev = data.rev;
+  buildVM();
+  loadPositions();
+  if (per && !VM.PER[per]) per = null;
   initDetail();
   renderStart();
   onData();
+  if (!again) return;
+  if (sel && !cardEls[sel.key]) sel = null;
+  apply();
+  // The drawer shows the same thing with the new data, or closes if it's gone.
+  if (drawer) {
+    restoring = true;
+    quietPanel = true;
+    var ok = false;
+    try {
+      ok = reopenPanel(drawer);
+    } finally {
+      restoring = false;
+      quietPanel = false;
+    }
+    if (!ok) clearSel();
+  }
+  if (focusCard && cardEls[focusCard])
+    cardEls[focusCard].focus({ preventScroll: true });
 }
 function fetchData() {
   return fetch("data.json", { cache: "no-store" }).then(function (r) {

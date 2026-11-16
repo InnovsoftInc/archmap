@@ -6,6 +6,10 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'self'; img-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:"
+    />
     <title>Architecture map</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
@@ -112,7 +116,13 @@
           id="mini"
           aria-label="Minimap: click to move the view"
         ></canvas>
-        <aside class="panel" id="panel" hidden aria-live="polite"></aside>
+        <aside
+          class="panel"
+          id="panel"
+          hidden
+          aria-labelledby="panelTitle"
+        ></aside>
+        <div class="sr-only" id="live" aria-live="polite"></div>
         <section class="start" id="start" aria-label="Start here" hidden>
           <article>
             <div class="doc" id="startBody"></div>
