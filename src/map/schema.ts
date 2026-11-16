@@ -1,6 +1,7 @@
 // Checking a map's frontmatter, ids, references and headings. A table of field specs per
 // folder, run by one small validator (no schema library).
 
+import { isObj as isObject, list } from "../util.ts";
 import type { Doc, Finding, Folder } from "./types.ts";
 
 type Spec =
@@ -13,7 +14,7 @@ type Spec =
 type Shape = Record<string, Spec>;
 
 const STATUSES = ["live", "planned", "retiring"];
-const ROUTE = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \/\S*$/;
+const ROUTE = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|ALL) \/\S*$/;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
 
 const req: Spec = { t: "string", required: true };
@@ -122,12 +123,9 @@ const NEEDS_EVIDENCE = ["connects", "endpoints", "jobs", "tables", "roles"];
 
 export const isPlanned = (doc: Doc): boolean => doc.data.status === "planned";
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 const isText = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "";
 const get = (o: object, key: string): unknown => Reflect.get(o, key);
-const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const oneOf = (values: string[]) => values.join(", ");
 
 /** Check `value` against `spec`; `path` is the field path used in messages. */
@@ -221,11 +219,20 @@ export const schemaProblems = (
   failedIds: string[] = [],
 ): Finding[] => {
   const findings: Finding[] = [];
-  const byFolder = (folders: Folder[]) =>
-    new Set([
-      ...docs.filter((d) => folders.includes(d.folder)).map((d) => d.id),
-      ...failedIds,
-    ]);
+  // The ids each reference may name, built once per list of folders rather
+  // than once per reference.
+  const idsIn = new Map<Folder[], Set<string>>();
+  const byFolder = (folders: Folder[]) => {
+    let ids = idsIn.get(folders);
+    if (!ids) {
+      ids = new Set([
+        ...docs.filter((d) => folders.includes(d.folder)).map((d) => d.id),
+        ...failedIds,
+      ]);
+      idsIn.set(folders, ids);
+    }
+    return ids;
+  };
   const firstWithId = new Map<string, Doc>();
 
   for (const doc of docs) {

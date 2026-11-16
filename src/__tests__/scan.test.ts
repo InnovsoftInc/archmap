@@ -525,7 +525,11 @@ describe("scan", () => {
     writeFileSync(join(tmp, "Dockerfile"), "FROM node\n");
     const result = scan(tmp);
     expect(result.unreadable).toEqual([
-      { file: "docker-compose.yml", reason: "no services: section found" },
+      {
+        file: "docker-compose.yml",
+        reason:
+          "invalid YAML at line 2: Flow sequence in block collection must be sufficiently indented and end with a ]",
+      },
     ]);
     // It carries on with the other files.
     expect(result.infra).toEqual([

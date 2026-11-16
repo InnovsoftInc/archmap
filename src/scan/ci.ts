@@ -8,7 +8,7 @@ const DEPLOY =
 // Copying to a server: the command itself, not a ~/.ssh path or ssh-keyscan.
 const COPY = /(?<![\w./~-])(?:ssh|scp|rsync)(?=\s)/g;
 
-export const ciReader: Reader = (root, files) => {
+export const ciReader: Reader = (root, files, cache) => {
   const ci: Scan["ci"] = [];
   const unreadable = readEach(
     root,
@@ -27,6 +27,7 @@ export const ciReader: Reader = (root, files) => {
         deploys: [...deploys].toSorted(),
       });
     },
+    cache,
   );
   return { ci: sortFacts(ci), unreadable };
 };

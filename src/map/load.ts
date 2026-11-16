@@ -22,9 +22,15 @@ const yamlError = (err: unknown): string => {
 export const splitFrontmatter = (
   text: string,
 ): { data: Record<string, unknown>; body: string } | { error: string } => {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  if (lines[0] !== "---") return { error: "missing frontmatter (--- block)" };
-  const end = lines.indexOf("---", 1);
+  // A byte-order mark or trailing spaces on a --- line are invisible in an
+  // editor, so they don't stop the frontmatter being read.
+  const lines = text
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .split("\n");
+  const isFence = (line: string | undefined) => line?.trimEnd() === "---";
+  if (!isFence(lines[0])) return { error: "missing frontmatter (--- block)" };
+  const end = lines.findIndex((line, i) => i > 0 && isFence(line));
   if (end === -1) return { error: "frontmatter is not closed with ---" };
   let data: unknown;
   try {

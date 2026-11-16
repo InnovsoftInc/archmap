@@ -23,7 +23,7 @@ const isEnvExample = (f: string) => {
 export const readsOutside = (f: string): boolean =>
   isEnvExample(f) || baseName(f) === "package.json";
 
-export const outsideReader: Reader = (root, files) => {
+export const outsideReader: Reader = (root, files, cache) => {
   const outside: Scan["outside"] = [];
   const unreadable = readEach(
     root,
@@ -46,6 +46,7 @@ export const outsideReader: Reader = (root, files) => {
       }
       for (const name of names) outside.push({ file, name, via: "sdk" });
     },
+    cache,
   );
   // A broken package.json is reported once, by the apps reader.
   return {

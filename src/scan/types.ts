@@ -24,4 +24,12 @@ export type Scan = {
   codeFiles: number;
 };
 
-export type Reader = (root: string, files: string[]) => Partial<Scan>;
+// File text by repo-relative path (or why it couldn't be read), shared by the
+// readers so each file is read at most once per scan.
+export type FileCache = Map<string, string | Error>;
+
+export type Reader = (
+  root: string,
+  files: string[],
+  cache?: FileCache,
+) => Partial<Scan>;

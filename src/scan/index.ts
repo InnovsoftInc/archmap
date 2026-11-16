@@ -5,7 +5,7 @@ import { infraReader, readsInfra } from "./infra.ts";
 import { outsideReader, readsOutside } from "./outside.ts";
 import { ciReader, readsCi } from "./ci.ts";
 import { sortFacts, walk } from "./walk.ts";
-import type { Reader, Scan } from "./types.ts";
+import type { FileCache, Reader, Scan } from "./types.ts";
 
 export type { Fact, Scan } from "./types.ts";
 export { walk } from "./walk.ts";
@@ -47,8 +47,11 @@ export const scan = (root: string): Scan => {
     unreadable,
     codeFiles: files.filter((f) => f.startsWith("src/") || CODE.test(f)).length,
   };
+  // Several readers open the same files (package.json, source files): each
+  // is read from disk once.
+  const cache: FileCache = new Map();
   for (const reader of READERS) {
-    const part = reader(root, files);
+    const part = reader(root, files, cache);
     result.apps.push(...(part.apps ?? []));
     result.routes.push(...(part.routes ?? []));
     result.routeFiles.push(...(part.routeFiles ?? []));
@@ -59,6 +62,10 @@ export const scan = (root: string): Scan => {
     result.ci.push(...(part.ci ?? []));
     result.unreadable.push(...(part.unreadable ?? []));
   }
-  result.unreadable = sortFacts(result.unreadable, "reason");
+  // A file several readers open is reported once.
+  const reported = new Map(
+    result.unreadable.map((u) => [`${u.file}\0${u.reason}`, u]),
+  );
+  result.unreadable = sortFacts([...reported.values()], "reason");
   return result;
 };

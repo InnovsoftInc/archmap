@@ -1,38 +1,52 @@
 import path from "node:path";
+import { parse, YAMLError } from "yaml";
 import { baseName, readEach, sortFacts } from "./walk.ts";
 import type { Reader, Scan } from "./types.ts";
 
-const isCompose = (f: string) =>
-  baseName(f).startsWith("docker-compose") && /\.ya?ml$/.test(f);
+// Compose files: compose.yaml / compose.yml (the current names) and
+// docker-compose*.yml / .yaml, including overrides like
+// docker-compose.prod.yml.
+const isCompose = (f: string) => {
+  const name = baseName(f);
+  return (
+    /\.ya?ml$/.test(name) &&
+    (/^compose\.ya?ml$/.test(name) || name.startsWith("docker-compose"))
+  );
+};
 const isDockerfile = (f: string) =>
   baseName(f) === "Dockerfile" || baseName(f).startsWith("Dockerfile.");
 
 export const readsInfra = (f: string): boolean =>
   f.endsWith(".tf") || isCompose(f) || isDockerfile(f);
 
-// The keys one level under a top-level `services:` line.
+const isMapping = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+// The keys of the top-level `services` mapping.
 const composeServices = (text: string): string[] => {
-  const names: string[] = [];
-  let inServices = false;
-  let indent: string | undefined;
-  for (const line of text.split("\n")) {
-    if (/^services:\s*$/.test(line)) {
-      inServices = true;
-    } else if (inServices && /^\S/.test(line) && !line.startsWith("#")) {
-      break;
-    } else if (inServices) {
-      const key = /^(\s+)([\w.-]+):\s*$/.exec(line);
-      if (key?.[1] && key[2]) {
-        indent ??= key[1];
-        if (key[1] === indent) names.push(key[2]);
-      }
-    }
+  let doc: unknown;
+  try {
+    doc = parse(text);
+  } catch (error) {
+    // The parser's message ends "at line N, column M:" and a code frame.
+    const message = error instanceof Error ? error.message : String(error);
+    const reason = message.split(/ at line \d+|\n/)[0]?.trim() ?? message;
+    const line = error instanceof YAMLError ? error.linePos?.[0].line : 0;
+    throw new Error(
+      line
+        ? `invalid YAML at line ${line}: ${reason}`
+        : `invalid YAML: ${reason}`,
+      { cause: error },
+    );
   }
-  if (!inServices) throw new Error("no services: section found");
-  return names;
+  const services = isMapping(doc) ? doc.services : undefined;
+  if (services === undefined) throw new Error("no services: section found");
+  if (services === null) return [];
+  if (!isMapping(services)) throw new Error("services: is not a mapping");
+  return Object.keys(services);
 };
 
-export const infraReader: Reader = (root, files) => {
+export const infraReader: Reader = (root, files, cache) => {
   const infra: Scan["infra"] = [];
   const unreadable = readEach(
     root,
@@ -63,6 +77,7 @@ export const infraReader: Reader = (root, files) => {
         });
       }
     },
+    cache,
   );
   return { infra: sortFacts(infra, "name", "type"), unreadable };
 };
