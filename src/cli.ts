@@ -28,11 +28,13 @@ const HELP = `archmap: an architecture map kept as markdown files in your repo.
 
 Usage: archmap <command> [options]
 
-  init [--name "Project"] [--ci github|azure] [--base <branch>] [--cli "<command>"] [--claude]
+  init [--name "Project"] [--ci github|azure [--force]] [--base <branch>] [--cli "<command>"] [--claude]
                                  Create architecture/, the AGENTS.md section and,
-                                 with --ci, the PR workflow; --base is the branch
+                                 with --ci, the PR workflow (kept if you edited
+                                 it; --force replaces it); --base is the branch
                                  PRs target (default: origin/HEAD, else main)
-  scan [--json]                  List what the repo contains (leads for the map)
+  scan [--json]                  List what the repo contains (leads for the map):
+                                 one <key> per line, or the full leads with --json
   check [--json] [--strict] [--base <ref>]
                                  Validate the map; with --base, run the map gate
                                  (use in CI)
@@ -84,6 +86,7 @@ const main = async (argv: string[]): Promise<void> => {
       base: { type: "string" },
       cli: { type: "string" },
       claude: { type: "boolean" },
+      force: { type: "boolean" },
       json: { type: "boolean" },
       strict: { type: "boolean" },
       public: { type: "boolean" },
@@ -114,6 +117,7 @@ const main = async (argv: string[]): Promise<void> => {
           base: values.base,
           cli: values.cli,
           claude: values.claude,
+          force: values.force,
         }),
       );
     }

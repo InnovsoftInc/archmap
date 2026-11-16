@@ -23,6 +23,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      # the archmap version archmap.config.json pins, read when the job runs,
+      # so changing the pin upgrades CI too
+      - name: Read the pinned archmap version
+        run: |
+          v="$(node -e 'const c = require(process.argv[1]); const v = c.archmap ?? process.argv[2]; if (typeof v !== "string" || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v)) { console.error("archmap.config.json: \"archmap\" must be a version like 1.2.3"); process.exit(1); } console.log(v);' "$PWD/__DIR__/archmap.config.json" __VERSION__)"
+          echo "ARCHMAP_VERSION=$v" >> "$GITHUB_ENV"
       - name: Check the map
         run: __CLI__ check --base origin/${{ github.base_ref }}
 
@@ -53,10 +59,18 @@ jobs:
           if [[ "$(git log -1 --format=%s)" == "archmap: "* ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         if: steps.guard.outputs.skip != 'true'
         with:
           node-version: 24
+      # the archmap version archmap.config.json pins, read when the job runs,
+      # so changing the pin upgrades CI too
+      - name: Read the pinned archmap version
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          v="$(node -e 'const c = require(process.argv[1]); const v = c.archmap ?? process.argv[2]; if (typeof v !== "string" || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v)) { console.error("archmap.config.json: \"archmap\" must be a version like 1.2.3"); process.exit(1); } console.log(v);' "$PWD/__DIR__/archmap.config.json" __VERSION__)"
+          echo "ARCHMAP_VERSION=$v" >> "$GITHUB_ENV"
       # the agent that archmap.config.json's agent.command runs; swap this
       # step to install a different agent
       - name: Install the agent
@@ -69,36 +83,66 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: __CLI__ agent --base origin/${{ github.base_ref }} | tee "$RUNNER_TEMP/archmap-agent.txt"
-      - name: Commit and publish the map
-        id: push
+      # the agent ran in this checkout and could have left git config or
+      # hooks behind that run a program or redirect the push: drop that
+      # config, run git with hooks off, and keep the push token out of every
+      # step but the push itself
+      - name: Commit the map
+        id: commit
         if: steps.guard.outputs.skip != 'true'
+        env:
+          START: ${{ steps.guard.outputs.head }}
+        run: |
+          { git config --local --name-only --get-regexp '^(url|include|includeif|credential|http|filter|diff|merge|gpg)\.|^core\.(fsmonitor|hookspath|sshcommand|askpass|pager|editor)$' || true; } | sort -u | while read -r key; do
+            git config --local --unset-all "$key"
+          done
+          g() {
+            git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c commit.gpgSign=false \
+              -c user.name="github-actions[bot]" \
+              -c user.email="41898341+github-actions[bot]@users.noreply.github.com" "$@"
+          }
+          # only the map folder is committed, on the commit the job checked out
+          if [ "$(git rev-parse HEAD)" != "$START" ]; then
+            echo "::error::HEAD moved while the agent ran; nothing is committed or pushed."
+            exit 1
+          fi
+          g reset -q
+          committed=false
+          last="$(tail -n 1 "$RUNNER_TEMP/archmap-agent.txt")"
+          if [ -n "$(g status --porcelain -- __DIR__)" ]; then
+            g add -A -- __DIR__
+            g commit -m "archmap: update map"
+            {
+              echo "### Map files changed"
+              g diff --name-only HEAD~1 -- __DIR__
+            } >> "$GITHUB_STEP_SUMMARY"
+            committed=true
+          elif [[ "$last" == "No map change: "* ]]; then
+            g commit --allow-empty -m "archmap: no map change" -m "Archmap: none - ${last#No map change: }"
+            committed=true
+          fi
+          echo "committed=$committed" >> "$GITHUB_OUTPUT"
+      - name: Publish the map
+        id: push
+        if: steps.guard.outputs.skip != 'true' && steps.commit.outputs.committed == 'true'
         env:
           PUSH_TOKEN: ${{ secrets.ARCHMAP_PUSH_TOKEN }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898341+github-actions[bot]@users.noreply.github.com"
-          committed=false
-          last="$(tail -n 1 "$RUNNER_TEMP/archmap-agent.txt")"
-          if [ -n "$(git status --porcelain -- __DIR__)" ]; then
-            git add -A -- __DIR__
-            git commit -m "archmap: update map"
-            {
-              echo "### Map files changed"
-              git diff --name-only HEAD~1 -- __DIR__
-            } >> "$GITHUB_STEP_SUMMARY"
-            committed=true
-          elif [[ "$last" == "No map change: "* ]]; then
-            git commit --allow-empty -m "archmap: no map change" -m "Archmap: none - ${last#No map change: }"
-            committed=true
-          fi
-          if [ "$committed" = true ]; then
-            # a push with the default token starts no new run, so use a
-            # GitHub App or fine-grained token with contents write
-            if [ -n "$PUSH_TOKEN" ]; then
-              git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
-              echo "pushed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "::warning::The map job has a commit to push but no ARCHMAP_PUSH_TOKEN secret. Add one (a push with the default token starts no new run, so the required check would be missing on the new head). Nothing was pushed."
-            fi
+          # a push with the default token starts no new run, so use a
+          # GitHub App or fine-grained token with contents write
+          if [ -n "$PUSH_TOKEN" ]; then
+            auth="$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
+            echo "::add-mask::$auth"
+            # the token goes only to this command, as a header (from the
+            # environment, so it isn't on the command line), to an explicit URL
+            GIT_CONFIG_COUNT=1 \
+              GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+              GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+              GIT_TERMINAL_PROMPT=0 \
+              git -c core.hooksPath=/dev/null -c credential.helper= \
+              push "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::The map job has a commit to push but no ARCHMAP_PUSH_TOKEN secret. Add one (a push with the default token starts no new run, so the required check would be missing on the new head). Nothing was pushed."
           fi

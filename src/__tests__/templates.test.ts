@@ -19,16 +19,18 @@ const github = () =>
 
 describe("CI templates", () => {
   it.each(["github", "azure-pipelines"])(
-    "%s template parses as YAML, pins node 24, has no literal secret, and only __CLI__/__DIR__ placeholders",
+    "%s template parses as YAML, pins node 24, has no literal secret, and only __CLI__/__DIR__/__VERSION__ placeholders",
     (name) => {
       const text = load(name);
       expect(() => parse(text)).not.toThrow();
       expect(text).toMatch(/\b24\b/);
       expect(text).not.toMatch(/sk-ant|ghp_|github_pat_/);
       const tokens = new Set(text.match(/__[A-Z]+__/g) ?? []);
-      expect([...tokens].every((t) => t === "__CLI__" || t === "__DIR__")).toBe(
-        true,
-      );
+      expect(
+        [...tokens].every((t) =>
+          ["__CLI__", "__DIR__", "__VERSION__"].includes(t),
+        ),
+      ).toBe(true);
     },
   );
 
@@ -66,17 +68,21 @@ describe("CI templates", () => {
   it("pushes only with ARCHMAP_PUSH_TOKEN and writes the Archmap: none trailer for a no-change decision", () => {
     const { jobs } = github();
     const push = jobs.map.steps.find((s) => s.id === "push");
-    const run = String(push?.run);
     expect(push?.env).toMatchObject({
       PUSH_TOKEN: "${{ secrets.ARCHMAP_PUSH_TOKEN }}",
     });
-    expect(run).toContain('-n "$PUSH_TOKEN"');
-    expect(run).toContain("::warning::");
+    expect(String(push?.if)).toContain(
+      "steps.commit.outputs.committed == 'true'",
+    );
+    expect(String(push?.run)).toContain('-n "$PUSH_TOKEN"');
+    expect(String(push?.run)).toContain("::warning::");
+    expect(String(push?.run)).toContain("pushed=true");
+    const run = String(jobs.map.steps.find((s) => s.id === "commit")?.run);
     expect(run).toContain("No map change: ");
     expect(run).toContain("Archmap: none - ");
     expect(run).toContain("--allow-empty");
     expect(run).toContain("archmap: update map");
-    expect(run).toContain("pushed=true");
+    expect(run).toContain("committed=$committed");
     const az = load("azure-pipelines");
     expect(az).toContain("Archmap: none - ");
     expect(az).toContain("ne(variables['System.PullRequest.IsFork'], 'True')");
@@ -90,11 +96,30 @@ describe("CI templates", () => {
     expect(checkout?.with).toMatchObject({ "persist-credentials": false });
     expect(JSON.stringify(checkout?.with)).not.toContain("ARCHMAP_PUSH_TOKEN");
     const push = String(jobs.map.steps.find((s) => s.id === "push")?.run);
+    // The token is a header for the push alone, never in a URL or on the
+    // command line, and the push goes to an explicit URL with hooks off.
     expect(push).toContain(
-      'push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"',
+      'push "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"',
     );
+    expect(push).toContain('GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"');
+    expect(push).toContain("core.hooksPath=/dev/null");
+    expect(push).toContain("credential.helper=");
+    expect(push).not.toMatch(/:\$\{?PUSH_TOKEN\}?@/);
     const agent = jobs.map.steps.find((s) => String(s.run).includes(" agent "));
     expect(JSON.stringify(agent?.env)).not.toContain("PUSH_TOKEN");
+    // Only the push step sees the token.
+    const others = jobs.map.steps.filter((s) => s.id !== "push");
+    expect(JSON.stringify(others)).not.toContain("PUSH_TOKEN");
+    // The commit runs git with hooks off, after dropping config the agent
+    // could have used to redirect the push or run a program, and only on the
+    // commit the job checked out.
+    const commit = String(jobs.map.steps.find((s) => s.id === "commit")?.run);
+    expect(commit).toContain("git -c core.hooksPath=/dev/null");
+    expect(commit).toContain("--unset-all");
+    expect(commit).toMatch(/\^\(url\|include/);
+    expect(commit).toContain('"$START"');
+    expect(commit).toContain("g reset -q");
+    expect(commit).not.toMatch(/^\s*git (add|commit|status)/m);
 
     const doc = parse(load("azure-pipelines")) as {
       stages: { jobs: { steps: Step[] }[] }[];
@@ -106,11 +131,18 @@ describe("CI templates", () => {
     });
     const azPush = steps.find((s) => s.name === "push");
     expect(String(azPush?.bash)).toContain(
-      'git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" push',
+      'GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN"',
     );
+    expect(String(azPush?.bash)).toContain('push "$REPO_URL"');
+    expect(String(azPush?.bash)).toContain("core.hooksPath=/dev/null");
     expect(azPush?.env).toMatchObject({
       SYSTEM_ACCESSTOKEN: "$(System.AccessToken)",
+      REPO_URL: "$(Build.Repository.Uri)",
     });
+    const azCommit = steps.find((s) => s.displayName === "Commit the map");
+    expect(String(azCommit?.bash)).toContain("git -c core.hooksPath=/dev/null");
+    expect(String(azCommit?.bash)).toContain("--unset-all");
+    expect(JSON.stringify(azCommit)).not.toContain("AccessToken");
     const azAgent = steps.find((s) => String(s.bash).includes(" agent "));
     expect(JSON.stringify(azAgent?.env)).not.toContain("AccessToken");
     // branch names reach bash through env, never macro-expanded into the script
@@ -154,4 +186,17 @@ describe("CI templates", () => {
     for (const s of mapSteps)
       expect(String(s.condition)).toContain("succeeded()");
   });
+
+  it.each(["github", "azure-pipelines"])(
+    "%s reads the pinned archmap version from the config when it runs",
+    (name) => {
+      const text = load(name);
+      expect(text).toContain('"$PWD/__DIR__/archmap.config.json" __VERSION__');
+      expect(text).toMatch(/ARCHMAP_VERSION/);
+      // validated, so the value can't inject env lines or shell words
+      expect(text).toContain("^\\d+\\.\\d+\\.\\d+");
+      // twice: the check job and the map job each read it
+      expect(text.match(/Read the pinned archmap version/g)).toHaveLength(2);
+    },
+  );
 });

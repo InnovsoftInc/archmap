@@ -1,11 +1,12 @@
 // The viewer's data: the markdown docs become the Model the browser draws, plus
 // each doc's prose sections.
 
-import { emptyModel } from "./core.ts";
-import type { Column, Model, Table } from "./core.ts";
+import { emptyModel } from "./model.ts";
+import type { Column, Model, Table } from "./model.ts";
 import type { Doc, Folder, MapConfig } from "./map/types.ts";
 import type { Freshness } from "./versions.ts";
 import { DEFAULT_LANES, laneOf, type Lane } from "./map/lanes.ts";
+import { isObj, strings } from "./util.ts";
 
 export type DocView = {
   folder: Folder;
@@ -19,13 +20,9 @@ export type DocView = {
 
 type Obj = Record<string, unknown>;
 
-const isObj = (v: unknown): v is Obj =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 const list = (v: unknown): Obj[] => (Array.isArray(v) ? v.filter(isObj) : []);
 const text = (v: unknown): string | undefined =>
   typeof v === "string" && v !== "" ? v : undefined;
-const strings = (v: unknown): string[] =>
-  Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
 
 const HOW = "## How it works";
 const DEV = "## For developers";
@@ -92,6 +89,22 @@ export const toViewModel = (
   const personaIds = new Set(
     docs.filter((d) => d.folder === "personas").map((d) => d.id),
   );
+  // What each persona uses, from the flow steps it takes: `{ by: <persona>,
+  // at: <service> }`. The map has no other record of it, and nothing says
+  // which tables a persona's needs touch, so jobs carry no `t`.
+  const uses = new Map<string, { to: string; label?: string }[]>();
+  for (const d of docs) {
+    if (d.folder !== "flows") continue;
+    for (const s of list(d.data.steps)) {
+      const by = text(s.by);
+      const at = text(s.at);
+      if (!by || !at || !personaIds.has(by) || personaIds.has(at)) continue;
+      const mine = uses.get(by) ?? [];
+      if (!mine.some((u) => u.to === at))
+        mine.push({ to: at, label: text(s.does) });
+      uses.set(by, mine);
+    }
+  }
   let areaOrder = 0;
   for (const d of docs) {
     const name = text(d.data.name) ?? d.id;
@@ -183,6 +196,7 @@ export const toViewModel = (
         name,
         blurb: summaryOf(d),
         jobs: strings(d.data.needs).map((job) => ({ job })),
+        uses: uses.get(d.id) ?? [],
       };
     if (d.folder === "flows")
       m.flows[d.id] = {
@@ -222,7 +236,8 @@ const eachEntry = <T>(
   fn: (entry: T) => T,
 ): Record<string, T> => {
   const out = Object.create(null) as Record<string, T>;
-  for (const [id, entry] of Object.entries(bag)) Reflect.set(out, id, fn(entry));
+  for (const [id, entry] of Object.entries(bag))
+    Reflect.set(out, id, fn(entry));
   return out;
 };
 

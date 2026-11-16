@@ -8,10 +8,21 @@ import { PACKAGE_ROOT } from "./home.ts";
 import { evidenceOf } from "./map/evidence.ts";
 import type { Doc } from "./map/types.ts";
 import { cliCommand } from "./version.ts";
+import { strings } from "./util.ts";
 
 export type Task = "setup" | "update" | "review" | "hosting";
 
+// Each list in the brief is capped so a large change or a broken map can't
+// make the prompt too long for the agent.
 const MAX_LEADS = 200;
+const MAX_CHANGED = 200;
+const MAX_PROBLEMS = 200;
+
+/** The first `max` lines, then "…and N more" for the rest. */
+const capped = (lines: string[], max: number): string[] =>
+  lines.length > max
+    ? [...lines.slice(0, max), `…and ${lines.length - max} more`]
+    : lines;
 
 /** An explicit task wins; an empty map is set up; `--base` means update; otherwise review. */
 export const pickTask = (
@@ -28,9 +39,6 @@ const template = (name: string): string =>
     join(PACKAGE_ROOT, "templates", "brief", `${name}.md`),
     "utf8",
   ).trim();
-
-const strings = (v: unknown): string[] =>
-  Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
 
 const covers = (doc: Doc, file: string): boolean =>
   strings(doc.data.code).some((code) => {
@@ -84,7 +92,12 @@ export const brief = (
     out.push(
       `## What changed since ${base}`,
       "",
-      ...(changed.length ? changed.map((f) => `- ${f}`) : ["No files."]),
+      ...(changed.length
+        ? capped(
+            changed.map((f) => `- ${f}`),
+            MAX_CHANGED,
+          )
+        : ["No files."]),
       "",
       ...(covering.length
         ? [
@@ -97,20 +110,22 @@ export const brief = (
     );
   }
 
-  const problems = [
-    ...check.errors.map(
-      (f) => `error: ${f.file ? `${f.file}: ` : ""}${f.message}`,
-    ),
-    // Leads are listed (and capped) under "Leads from scan", not here.
-    ...check.warnings
-      .filter((f) => !f.message.startsWith(LEAD_WARNING))
-      .map((f) => `warning: ${f.file ? `${f.file}: ` : ""}${f.message}`),
-  ];
-  const leads = check.leads
-    .slice(0, MAX_LEADS)
-    .map((l) => `- ${l.file}: ${l.text}`);
-  if (check.leads.length > MAX_LEADS)
-    leads.push(`…and ${check.leads.length - MAX_LEADS} more`);
+  const problems = capped(
+    [
+      ...check.errors.map(
+        (f) => `error: ${f.file ? `${f.file}: ` : ""}${f.message}`,
+      ),
+      // Leads are listed (and capped) under "Leads from scan", not here.
+      ...check.warnings
+        .filter((f) => !f.message.startsWith(LEAD_WARNING))
+        .map((f) => `warning: ${f.file ? `${f.file}: ` : ""}${f.message}`),
+    ],
+    MAX_PROBLEMS,
+  );
+  const leads = capped(
+    check.leads.map((l) => `- ${l.file}: ${l.text}`),
+    MAX_LEADS,
+  );
 
   out.push(
     "## What belongs on the map",

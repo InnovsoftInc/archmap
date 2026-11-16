@@ -5,7 +5,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { PACKAGE_ROOT, VERSION } from "./home.ts";
 import type { MapConfig, Result } from "./map/types.ts";
 import { defaultBase } from "./git.ts";
-import { cliCommand } from "./version.ts";
+import { ciCommand, cliCommand } from "./version.ts";
 
 const START = "<!-- archmap:start -->";
 const END = "<!-- archmap:end -->";
@@ -111,6 +111,8 @@ export const init = (
     base?: string;
     cli?: string;
     claude?: boolean;
+    /** Replace a workflow that differs from the template. */
+    force?: boolean;
   },
 ): Result => {
   const dir = opts.dir ?? "architecture";
@@ -205,13 +207,24 @@ export const init = (
       opts.ci === "github"
         ? ["github", join(".github", "workflows", "archmap.yml")]
         : ["azure-pipelines", join(".azure-pipelines", "archmap.yml")];
-    write(
-      join(root, to),
-      template("ci", from, "archmap-pr.yml")
-        .replaceAll("__CLI__", cli)
-        .replaceAll("__DIR__", rel),
-    );
-    lines.push(`Wrote ${to}.`);
+    // The workflow reads the archmap version from the config when it runs,
+    // so it needs no rewrite when the pin changes; this version is only the
+    // fallback for a config that pins none.
+    const text = template("ci", from, "archmap-pr.yml")
+      .replaceAll("__CLI__", ciCommand(config, dir, root))
+      .replaceAll("__DIR__", rel)
+      .replaceAll("__VERSION__", VERSION);
+    const path = join(root, to);
+    const current = existsSync(path) ? readFileSync(path, "utf8") : undefined;
+    if (current === text) lines.push(`Kept ${to}.`);
+    else if (current !== undefined && !opts.force)
+      lines.push(
+        `Kept ${to}: it differs from the workflow init writes. Run init --ci ${opts.ci} --force to replace it.`,
+      );
+    else {
+      write(path, text);
+      lines.push(current === undefined ? `Wrote ${to}.` : `Replaced ${to}.`);
+    }
   }
 
   if (opts.claude) {

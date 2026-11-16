@@ -37,11 +37,20 @@ stages:
               if [[ "$(git log -1 --format=%s)" == "archmap: "* ]]; then
                 echo "##vso[task.setvariable variable=skip]true"
               fi
+              echo "##vso[task.setvariable variable=start]$(git rev-parse HEAD)"
             displayName: Skip the map job's own commits
             env:
               SOURCE_BRANCH: $(System.PullRequest.SourceBranch)
               TARGET_BRANCH: $(System.PullRequest.TargetBranch)
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          # the archmap version archmap.config.json pins, read when the job
+          # runs, so changing the pin upgrades CI too
+          - bash: |
+              set -euo pipefail
+              v="$(node -e 'const c = require(process.argv[1]); const v = c.archmap ?? process.argv[2]; if (typeof v !== "string" || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v)) { console.error("archmap.config.json: \"archmap\" must be a version like 1.2.3"); process.exit(1); } console.log(v);' "$PWD/__DIR__/archmap.config.json" __VERSION__)"
+              echo "##vso[task.setvariable variable=ARCHMAP_VERSION]$v"
+            displayName: Read the pinned archmap version
+            condition: and(succeeded(), ne(variables.skip, 'true'))
           # the agent that archmap.config.json's agent.command runs; swap this
           # step to install a different agent
           - bash: npm install -g @anthropic-ai/claude-code
@@ -56,32 +65,59 @@ stages:
             env:
               TARGET_BRANCH: $(System.PullRequest.TargetBranch)
               ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+          # the agent ran in this checkout and could have left git config or
+          # hooks behind that run a program or redirect the push: drop that
+          # config, run git with hooks off, and keep the access token out of
+          # every step but the push itself
+          - bash: |
+              set -euo pipefail
+              { git config --local --name-only --get-regexp '^(url|include|includeif|credential|http|filter|diff|merge|gpg)\.|^core\.(fsmonitor|hookspath|sshcommand|askpass|pager|editor)$' || true; } | sort -u | while read -r key; do
+                git config --local --unset-all "$key"
+              done
+              g() {
+                git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c commit.gpgSign=false \
+                  -c user.name="Archmap" -c user.email="archmap@users.noreply.invalid" "$@"
+              }
+              # only the map folder is committed, on the commit the job checked out
+              if [ "$(git rev-parse HEAD)" != "$START" ]; then
+                echo "##vso[task.logissue type=error]HEAD moved while the agent ran; nothing is committed or pushed."
+                exit 1
+              fi
+              g reset -q
+              last="$(tail -n 1 "$(Agent.TempDirectory)/archmap-agent.txt")"
+              if [ -n "$(g status --porcelain -- __DIR__)" ]; then
+                g add -A -- __DIR__
+                g commit -m "archmap: update map"
+                echo "Map files changed:"
+                g diff --name-only HEAD~1 -- __DIR__
+                echo "##vso[task.setvariable variable=committed]true"
+              elif [[ "$last" == "No map change: "* ]]; then
+                g commit --allow-empty -m "archmap: no map change" -m "Archmap: none - ${last#No map change: }"
+                echo "##vso[task.setvariable variable=committed]true"
+              fi
+            displayName: Commit the map
+            condition: and(succeeded(), ne(variables.skip, 'true'))
+            env:
+              START: $(start)
           - bash: |
               set -euo pipefail
               src="${SOURCE_BRANCH#refs/heads/}"
-              git config user.name "Archmap"
-              git config user.email "archmap@users.noreply.invalid"
-              committed=false
-              last="$(tail -n 1 "$(Agent.TempDirectory)/archmap-agent.txt")"
-              if [ -n "$(git status --porcelain -- __DIR__)" ]; then
-                git add -A -- __DIR__
-                git commit -m "archmap: update map"
-                echo "Map files changed:"
-                git diff --name-only HEAD~1 -- __DIR__
-                committed=true
-              elif [[ "$last" == "No map change: "* ]]; then
-                git commit --allow-empty -m "archmap: no map change" -m "Archmap: none - ${last#No map change: }"
-                committed=true
-              fi
-              if [ "$committed" = true ]; then
-                git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" push origin "HEAD:refs/heads/$src"
-                echo "##vso[task.setvariable variable=pushed;isOutput=true]true"
-              fi
+              # the token goes only to this command, as a header (from the
+              # environment, so it isn't on the command line), to the
+              # repository's own URL rather than whatever origin now says
+              GIT_CONFIG_COUNT=1 \
+                GIT_CONFIG_KEY_0="http.extraheader" \
+                GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
+                GIT_TERMINAL_PROMPT=0 \
+                git -c core.hooksPath=/dev/null -c credential.helper= \
+                push "$REPO_URL" "HEAD:refs/heads/$src"
+              echo "##vso[task.setvariable variable=pushed;isOutput=true]true"
             name: push
-            displayName: Commit and publish the map
-            condition: and(succeeded(), ne(variables.skip, 'true'))
+            displayName: Publish the map
+            condition: and(succeeded(), ne(variables.skip, 'true'), eq(variables.committed, 'true'))
             env:
               SOURCE_BRANCH: $(System.PullRequest.SourceBranch)
+              REPO_URL: $(Build.Repository.Uri)
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
   # Required, no AI: fails the pull request when the map is invalid or the
@@ -99,6 +135,13 @@ stages:
           - task: NodeTool@0
             inputs:
               versionSpec: 24.x
+          # the archmap version archmap.config.json pins, read when the job
+          # runs, so changing the pin upgrades CI too
+          - bash: |
+              set -euo pipefail
+              v="$(node -e 'const c = require(process.argv[1]); const v = c.archmap ?? process.argv[2]; if (typeof v !== "string" || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v)) { console.error("archmap.config.json: \"archmap\" must be a version like 1.2.3"); process.exit(1); } console.log(v);' "$PWD/__DIR__/archmap.config.json" __VERSION__)"
+              echo "##vso[task.setvariable variable=ARCHMAP_VERSION]$v"
+            displayName: Read the pinned archmap version
           - bash: |
               set -euo pipefail
               tgt="${TARGET_BRANCH#refs/heads/}"

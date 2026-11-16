@@ -4,6 +4,7 @@
 // placed from what it already says (its folder, kind and status); a project can
 // rename or add lanes in archmap.config.json, and a file can name its `lane`.
 
+import { isObj, text } from "../util.ts";
 import type { Doc, Finding, MapConfig } from "./types.ts";
 
 export type Lane = {
@@ -46,11 +47,7 @@ export const DEFAULT_LANES: Lane[] = [
 
 const LANE_ID = /^[a-z0-9][a-z0-9_-]*$/;
 
-type Obj = Record<string, unknown>;
-const isObj = (v: unknown): v is Obj =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-const str = (v: unknown): string | undefined =>
-  typeof v === "string" && v.trim() !== "" ? v : undefined;
+const str = text;
 
 /** The config's lanes when it lists valid ones, else the defaults. */
 export const lanesOf = (config: MapConfig): Lane[] => {
@@ -66,7 +63,13 @@ export const lanesOf = (config: MapConfig): Lane[] => {
 };
 
 // Outside services the project runs on rather than talks to.
-const PLATFORM_KINDS = new Set(["hosting", "secrets", "monitoring", "ci", "dns"]);
+const PLATFORM_KINDS = new Set([
+  "hosting",
+  "secrets",
+  "monitoring",
+  "ci",
+  "dns",
+]);
 
 /** The lane a file goes in by default, from its folder, kind and status. */
 const derived = (doc: Doc): { id: string; outside: boolean } => {
@@ -108,17 +111,25 @@ export const laneProblems = (config: MapConfig, docs: Doc[]): Finding[] => {
       const seen = new Set<string>();
       config.lanes.forEach((l: unknown, i: number) => {
         const at = `lanes[${i}]`;
-        if (!isObj(l)) return void out.push({ file, message: `${at} must be a mapping` });
+        if (!isObj(l))
+          return void out.push({ file, message: `${at} must be a mapping` });
         const id = str(l.id);
         if (!id || !LANE_ID.test(id))
-          out.push({ file, message: `${at}.id must be lowercase letters, digits, - or _` });
+          out.push({
+            file,
+            message: `${at}.id must be lowercase letters, digits, - or _`,
+          });
         else if (seen.has(id))
           out.push({ file, message: `${at}.id "${id}" is used twice` });
         else seen.add(id);
-        if (!str(l.name)) out.push({ file, message: `${at}.name must be a non-empty string` });
+        if (!str(l.name))
+          out.push({ file, message: `${at}.name must be a non-empty string` });
       });
       if (!config.lanes.some((l: unknown) => isObj(l) && l.outside !== true))
-        out.push({ file, message: "lanes needs at least one lane inside the boundary" });
+        out.push({
+          file,
+          message: "lanes needs at least one lane inside the boundary",
+        });
     }
   }
   const ids = new Set(lanesOf(config).map((l) => l.id));

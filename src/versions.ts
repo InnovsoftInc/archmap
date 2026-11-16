@@ -5,13 +5,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Doc } from "./map/types.ts";
+import { isObj } from "./util.ts";
 
 export type LibVersion = { package: string; declared: string };
 export type Freshness = "ok" | "patch" | "minor" | "major";
 
 type Obj = Record<string, unknown>;
-const isObj = (v: unknown): v is Obj =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** Every dependency named in the package.json files under a doc's `code` paths. */
 const dependenciesOf = (root: string, doc: Doc): Map<string, string> => {

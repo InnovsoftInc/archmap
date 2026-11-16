@@ -102,7 +102,7 @@ export default defineConfig([
   {
     // The model is keyed by ids from save files. Collections have no prototype and
     // validateSave rejects __proto__, prototype and constructor, so keyed access is safe.
-    files: ["src/core.ts"],
+    files: ["src/legacy/ledger.ts"],
     rules: { "security/detect-object-injection": "off" },
   },
   {

@@ -9,13 +9,13 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { replay, type Op } from "../core.ts";
+import { replay, type Op } from "../legacy/ledger.ts";
 import { VERSION } from "../home.ts";
 import { loadMap } from "../map/load.ts";
 import { schemaProblems } from "../map/schema.ts";
 import type { Doc, Folder } from "../map/types.ts";
 import { migrate } from "../migrate.ts";
-import { loadProject } from "../project.ts";
+import { loadProject } from "../legacy/project.ts";
 
 const LEDGER = join(import.meta.dirname, "fixtures", "legacy-ledger");
 
@@ -554,6 +554,34 @@ describe("migrate", () => {
     );
     expect(existsSync(join(dir, "services"))).toBe(false);
     expect(existsSync(join(dir, "README.md"))).toBe(false);
+    expect(
+      JSON.parse(readFileSync(join(dir, "archmap.config.json"), "utf8"))
+        .archmap,
+    ).toBeUndefined();
+  });
+
+  it("refuses an id that would write outside the map folder, writing nothing", () => {
+    writeLedger([
+      add("service", "../../../../escape/x", {
+        name: "A",
+        type: "app",
+        purpose: "a",
+      }),
+      add("persona", "/abs", { name: "P", blurb: "b" }),
+      add("service", "ok_one", { name: "B", type: "app", purpose: "b" }),
+    ]);
+    const r = migrate(root, dir);
+    expect(r.ok).toBe(false);
+    expect(r.lines[0]).toBe("Nothing was written.");
+    const text = r.lines.join("\n");
+    expect(text).toContain(
+      '../../../../escape/x would become "../../../../escape/x"',
+    );
+    expect(text).toContain('/abs would become "/abs"');
+    expect(text).not.toContain("ok_one");
+    expect(existsSync(join(root, "..", "escape"))).toBe(false);
+    expect(existsSync(join(dir, "services"))).toBe(false);
+    expect(existsSync(join(dir, "personas"))).toBe(false);
     expect(
       JSON.parse(readFileSync(join(dir, "archmap.config.json"), "utf8"))
         .archmap,

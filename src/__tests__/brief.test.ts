@@ -225,6 +225,31 @@ describe("brief", () => {
     expect(section).toMatch(/…and \d+ more/);
   });
 
+  it("caps the changed files at 200 with an …and N more line", () => {
+    api();
+    for (let i = 0; i < 205; i++) write(`src/f${i}.ts`, "a\n");
+    initRepo();
+    for (let i = 0; i < 205; i++) write(`src/f${i}.ts`, "b\n");
+    const out = brief(root, dir(), { task: "update", base: "HEAD" });
+    const section = out.split("## What changed since HEAD")[1].split("##")[0];
+    expect(section.match(/^- src\//gm)?.length).toBe(200);
+    expect(section).toContain("…and 5 more");
+  });
+
+  it("caps the check results at 200 with an …and N more line", () => {
+    const endpoints = Array.from(
+      { length: 205 },
+      (_, i) => `  - route: GET /x${i}\n    evidence: missing${i}.ts\n`,
+    ).join("");
+    api(`endpoints:\n${endpoints}`);
+    const out = brief(root, dir(), { task: "review" });
+    const section = out
+      .split("## Current check results")[1]
+      .split("## Leads")[0];
+    expect(section.match(/^(error|warning): /gm)?.length).toBe(200);
+    expect(section).toMatch(/…and \d+ more/);
+  });
+
   it("uses config.cli and adds --dir when the folder isn't architecture", () => {
     config({ cli: "archmap" });
     expect(brief(root, dir(), { task: "review" })).toContain(

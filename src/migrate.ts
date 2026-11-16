@@ -10,17 +10,13 @@ import {
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { stringify } from "yaml";
-import {
-  replay,
-  type Column,
-  type Connection,
-  type Model,
-  type Service,
-} from "./core.ts";
+import { replay } from "./legacy/ledger.ts";
+import { loadProject, writeJson } from "./legacy/project.ts";
 import { VERSION } from "./home.ts";
 import { FOLDERS } from "./map/types.ts";
 import type { Folder, Result } from "./map/types.ts";
-import { loadProject, writeJson } from "./project.ts";
+import type { Column, Connection, Model, Service } from "./model.ts";
+import { text } from "./util.ts";
 
 const ROUTE = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \/\S*$/;
 const DATABASE = /postgres|sql|database|db\b/i;
@@ -49,14 +45,24 @@ type Draft = {
 
 const toId = (id: string): string => id.toLowerCase().replace(/_/g, "-");
 
+// A new id is a file name in the map folder, so it can't hold a path
+// separator or start with a dot.
+const VALID_ID = /^[a-z0-9][a-z0-9._-]*$/;
+
+/** One line per draft whose new id can't be used as a file name. */
+const invalidIds = (drafts: Draft[]): string[] =>
+  drafts
+    .filter((d) => !VALID_ID.test(d.id))
+    .map(
+      (d) =>
+        `${d.source} would become ${JSON.stringify(d.id)}, which isn't a usable id (letters, digits, ".", "_" and "-", starting with a letter or digit); rename it with a save and run migrate again.`,
+    );
+
 const slug = (text: string): string =>
   text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-
-const text = (v: unknown): string | undefined =>
-  typeof v === "string" && v.trim() !== "" ? v : undefined;
 
 const statusOf = (status: unknown, lane?: unknown): string => {
   const s = typeof status === "string" ? status : "";
@@ -211,8 +217,7 @@ const draftsFrom = (m: Model): { drafts: Draft[]; lines: string[] } => {
         compact({ name, schedule: text(s.schedule) ?? text(s.tech) }),
       );
       if (purpose) owner.bullets.push(bullet(name, purpose));
-    }
-    else if ((s.type === "library" || s.type === "tool") && isService)
+    } else if ((s.type === "library" || s.type === "tool") && isService)
       push(owner, "libraries", compact({ name, why: purpose }));
     else
       owner.bullets.push(
@@ -440,7 +445,7 @@ export const migrate = (root: string, dir: string): Result => {
     return { ok: false, lines: ["Nothing was written.", config] };
   const m = replay(project.saves);
   const { drafts, lines: dropped } = draftsFrom(m);
-  const clashes = collisions(drafts);
+  const clashes = [...invalidIds(drafts), ...collisions(drafts)];
   if (clashes.length)
     return { ok: false, lines: ["Nothing was written.", ...clashes] };
   const lines = [...project.fileErrors.map((e) => `Skipped: ${e}`), ...dropped];

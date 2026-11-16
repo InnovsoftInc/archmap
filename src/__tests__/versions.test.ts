@@ -1,9 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Doc } from "../map/types.ts";
-import { latestVersions } from "../registry.ts";
+import { defaultCacheFile, fromRegistry, latestVersions } from "../registry.ts";
 import { freshness, libraryVersions } from "../versions.ts";
 
 let root: string;
@@ -128,5 +137,84 @@ describe("latestVersions", () => {
         cacheFile: cacheFile(),
       }),
     ).toEqual({});
+  });
+
+  it("caches not-found answers too, so a missing package isn't asked again within the day", async () => {
+    const r = registry({});
+    const now = 1_000_000;
+    await latestVersions(["nope"], {
+      fetch: r.get,
+      cacheFile: cacheFile(),
+      now,
+    });
+    const again = registry({});
+    expect(
+      await latestVersions(["nope"], {
+        fetch: again.get,
+        cacheFile: cacheFile(),
+        now: now + 1000,
+      }),
+    ).toEqual({});
+    expect(again.asked).toEqual([]);
+    const later = registry({ nope: "1.0.0" });
+    expect(
+      await latestVersions(["nope"], {
+        fetch: later.get,
+        cacheFile: cacheFile(),
+        now: now + 2 * 24 * 60 * 60 * 1000,
+      }),
+    ).toEqual({ nope: "1.0.0" });
+  });
+
+  it("keeps the cache in a private folder, written atomically, replacing a link rather than following it", async () => {
+    const folder = join(root, "cache", "archmap");
+    const file = join(folder, "registry.json");
+    const r = registry({ express: "5.1.0" });
+    await latestVersions(["express"], { fetch: r.get, cacheFile: file });
+    expect(statSync(folder).mode & 0o777).toBe(0o700);
+    expect(JSON.parse(readFileSync(file, "utf8")).express.v).toBe("5.1.0");
+    // A link planted at the cache file is neither read nor written through.
+    const target = join(root, "victim.txt");
+    writeFileSync(target, "keep me");
+    rmSync(file);
+    symlinkSync(target, file);
+    await latestVersions(["express"], { fetch: r.get, cacheFile: file });
+    expect(readFileSync(target, "utf8")).toBe("keep me");
+    expect(JSON.parse(readFileSync(file, "utf8")).express.v).toBe("5.1.0");
+    expect(existsSync(join(folder, "registry.json"))).toBe(true);
+  });
+
+  it("defaults the cache to XDG_CACHE_HOME, else ~/.cache, never the shared temp folder", () => {
+    expect(defaultCacheFile({ XDG_CACHE_HOME: "/x/cache" })).toBe(
+      join("/x/cache", "archmap", "registry.json"),
+    );
+    expect(defaultCacheFile({})).toMatch(
+      /\.cache[\\/]archmap[\\/]registry\.json$/,
+    );
+    expect(defaultCacheFile({ XDG_CACHE_HOME: "relative" })).toMatch(
+      /\.cache[\\/]archmap/,
+    );
+  });
+});
+
+describe("fromRegistry", () => {
+  it.each([
+    ["^5.1.0", true],
+    ["~1.2", true],
+    ["latest", true],
+    ["1.0.0 - 2.0.0", true],
+    ["workspace:*", false],
+    ["file:../lib", false],
+    ["link:../lib", false],
+    ["portal:../lib", false],
+    ["npm:other@1", false],
+    ["git+https://github.com/a/b.git", false],
+    ["git://github.com/a/b.git", false],
+    ["github:a/b", false],
+    ["https://example.com/x.tgz", false],
+    ["a/b#v1", false],
+    ["../lib", false],
+  ])("%s is %s", (range, want) => {
+    expect(fromRegistry(range)).toBe(want);
   });
 });

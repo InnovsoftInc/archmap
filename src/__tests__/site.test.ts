@@ -1,9 +1,11 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -202,7 +204,10 @@ describe("toViewModel", () => {
       name: "Admin",
       blurb: "Runs it.",
       jobs: [{ job: "Manage users" }],
+      // From the flow steps the persona takes; the map has no per-need tables.
+      uses: [{ to: "api", label: "asks" }],
     });
+    expect(m.personas.admin?.jobs?.[0]).not.toHaveProperty("t");
     expect(m.flows.signup?.steps).toEqual([
       { from: "persona:admin", to: "api", label: "asks" },
       { from: "api", to: "db", label: "saves" },
@@ -359,7 +364,9 @@ Inline <b onmouseover=alert(1)>bold</b>.
       expect(all).not.toMatch(/<script/i);
       expect(all).not.toMatch(/<div/i);
       expect(all).not.toMatch(/<b /i);
-      expect(data.docs.api?.summary).toContain("&lt;img src=x onerror=alert(1)&gt;");
+      expect(data.docs.api?.summary).toContain(
+        "&lt;img src=x onerror=alert(1)&gt;",
+      );
     }
   });
 
@@ -437,6 +444,175 @@ Inline <b onmouseover=alert(1)>bold</b>.
     await new Promise((resolve) => server.close(resolve));
   });
 
+  it("refuses a logo outside the map folder or that isn't an image, and copies a good one", async () => {
+    seed();
+    writeFileSync(join(root, ".env"), "SECRET=1\n");
+    write("logo.svg", "<svg/>");
+    const out = join(root, "site");
+    for (const logo of ["../.env", "../logo.svg", "/etc/passwd", "README.md"]) {
+      write("archmap.config.json", JSON.stringify({ name: "Acme", logo }));
+      await expect(
+        build(root, dir, out, { public: true, offline: true }),
+      ).rejects.toThrow(/"logo"/);
+      const data = JSON.parse(siteData(root, dir, {})) as {
+        config: { logo?: string };
+      };
+      expect(data.config.logo).toBeUndefined();
+    }
+    expect(existsSync(out)).toBe(false);
+    // A link inside the map folder that points outside it is refused too.
+    symlinkSync(join(root, ".env"), join(dir, "sneaky.png"));
+    write("archmap.config.json", '{"name":"Acme","logo":"sneaky.png"}');
+    await expect(build(root, dir, out, { offline: true })).rejects.toThrow(
+      /links outside the map folder/,
+    );
+    write("archmap.config.json", '{"name":"Acme","logo":"logo.svg"}');
+    await build(root, dir, out, { offline: true });
+    expect(readFileSync(join(out, "logo.svg"), "utf8")).toBe("<svg/>");
+    expect(readdirSync(out).join(",")).not.toContain("env");
+  });
+
+  it("dev serve never returns a file outside the map folder as the logo", async () => {
+    seed();
+    writeFileSync(join(root, ".env"), "SECRET=1\n");
+    write("archmap.config.json", '{"name":"Acme","logo":"../.env"}');
+    const server = await serve(root, dir, 0, { offline: true });
+    const port = (server.address() as { port: number }).port;
+    const body = await new Promise<string>((resolve) =>
+      request({ host: "127.0.0.1", port, path: "/logo.env" }, (res) => {
+        let b = "";
+        res.on("data", (c: Buffer) => (b += c.toString()));
+        res.on("end", () => resolve(b));
+      }).end(),
+    );
+    expect(body).not.toContain("SECRET");
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  it("drops config links and font stylesheets the viewer can't safely load", () => {
+    write(
+      "archmap.config.json",
+      JSON.stringify({
+        name: "Acme",
+        links: [
+          { label: "Repo", url: "https://example.com" },
+          { label: "Mail", url: "mailto:a@b.c" },
+          { label: "Docs", url: "docs/index.html" },
+          { label: "Bad", url: "javascript:alert(1)" },
+          { label: "Bad2", url: "java\tscript:alert(1)" },
+          { label: "Bad3", url: "&#106;avascript:alert(1)" },
+          { label: "Data", url: "data:text/html,<b>x</b>" },
+        ],
+        fonts: { stylesheet: "javascript:alert(1)", sans: "Inter" },
+      }),
+    );
+    write("README.md", "# Acme\n");
+    for (const opts of [{}, { public: true }, { dev: true }]) {
+      const data = JSON.parse(siteData(root, dir, opts)) as {
+        config: {
+          links: { url: string }[];
+          fonts: { stylesheet?: string; sans?: string };
+        };
+      };
+      expect(data.config.links.map((l) => l.url)).toEqual([
+        "https://example.com",
+        "mailto:a@b.c",
+        "docs/index.html",
+      ]);
+      expect(data.config.fonts).toEqual({ sans: "Inter" });
+    }
+    for (const [sheet, kept] of [
+      ["https://fonts.googleapis.com/css2?family=Inter", true],
+      ["fonts.css", true],
+      ["http://fonts.example/x.css", false],
+      ["//evil.example/x.css", false],
+      ["data:text/css,body{}", false],
+    ] as const) {
+      write(
+        "archmap.config.json",
+        JSON.stringify({ name: "Acme", fonts: { stylesheet: sheet } }),
+      );
+      const data = JSON.parse(siteData(root, dir, {})) as {
+        config: { fonts: { stylesheet?: string } };
+      };
+      expect(data.config.fonts.stylesheet).toBe(kept ? sheet : undefined);
+    }
+  });
+
+  it("dev serve rebuilds data.json when the map changes, and rescans code only every rescanMs", async () => {
+    seed();
+    const get = async (port: number) =>
+      (
+        JSON.parse(
+          await new Promise<string>((resolve) =>
+            request({ host: "127.0.0.1", port, path: "/data.json" }, (res) => {
+              let b = "";
+              res.on("data", (c: Buffer) => (b += c.toString()));
+              res.on("end", () => resolve(b));
+            }).end(),
+          ),
+        ) as { rev: string }
+      ).rev;
+    const route = (n: number) => {
+      mkdirSync(join(root, "apps", "api"), { recursive: true });
+      writeFileSync(
+        join(root, "apps", "api", `r${n}.ts`),
+        `import express from "express";\nconst app = express();\napp.get("/n${n}", (_q, r) => r.send("ok"));\n`,
+      );
+    };
+    const slow = await serve(root, dir, 0, { offline: true, rescanMs: 60_000 });
+    const port = (slow.address() as { port: number }).port;
+    const first = await get(port);
+    expect(await get(port)).toBe(first);
+    // A code change alone waits for the rescan...
+    route(1);
+    expect(await get(port)).toBe(first);
+    // ...a map change rebuilds at once.
+    write(
+      "services/web.md",
+      "---\nname: Web\nstatus: live\nkind: app\n---\nThe site.\n",
+    );
+    const second = await get(port);
+    expect(second).not.toBe(first);
+    await new Promise((resolve) => slow.close(resolve));
+
+    const fast = await serve(root, dir, 0, { offline: true, rescanMs: 0 });
+    const fastPort = (fast.address() as { port: number }).port;
+    const before = await get(fastPort);
+    route(2);
+    expect(await get(fastPort)).not.toBe(before);
+    await new Promise((resolve) => fast.close(resolve));
+  });
+
+  it("asks the registry only for dependencies that come from it", async () => {
+    seed();
+    write(
+      "services/api.md",
+      '---\nname: API\nstatus: live\nkind: api\ncode: [apps/api]\nlibraries:\n  - { name: Express }\n  - { name: Shared, package: "@acme/shared" }\n  - { name: Fork, package: forked }\n---\nHandles requests.\n',
+    );
+    mkdirSync(join(root, "apps", "api"), { recursive: true });
+    writeFileSync(
+      join(root, "apps", "api", "package.json"),
+      JSON.stringify({
+        dependencies: {
+          express: "^5.1.0",
+          "@acme/shared": "workspace:*",
+          forked: "github:acme/forked#v1",
+        },
+      }),
+    );
+    const asked: string[] = [];
+    const get = (async (url: string) => {
+      asked.push(url);
+      return new Response(JSON.stringify({ version: "5.1.0" }));
+    }) as typeof fetch;
+    await build(root, dir, join(root, "site"), {
+      fetch: get,
+      cacheFile: join(root, "cache.json"),
+    });
+    expect(asked).toEqual(["https://registry.npmjs.org/express/latest"]);
+  });
+
   it("serve rejects with a readable message when the port is in use", async () => {
     seed();
     const first = await serve(root, dir, 0);
@@ -485,4 +661,3 @@ describe("viewer: Start here", () => {
     );
   });
 });
-

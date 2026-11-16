@@ -28,6 +28,8 @@ afterEach(() => {
 
 const read = (...p: string[]) => readFileSync(join(root, ...p), "utf8");
 const CLI = `npx -y github:${HOME_REPO}#v${VERSION}`;
+// The workflows run archmap at the version the config pins when they run.
+const CI_CLI = `npx -y github:${HOME_REPO}#v\${ARCHMAP_VERSION}`;
 
 describe("init", () => {
   it("creates the config pinned to this version, README and AGENTS block", () => {
@@ -87,13 +89,45 @@ describe("init", () => {
   it("writes the GitHub and Azure workflows with the CLI and dir filled", () => {
     init(root, { ci: "github" });
     const gh = read(".github", "workflows", "archmap.yml");
-    expect(gh).toContain(`${CLI} check --base origin/`);
-    expect(gh).toContain("git status --porcelain -- architecture");
-    expect(gh).not.toMatch(/__(CLI|DIR)__/);
+    expect(gh).toContain(`${CI_CLI} check --base origin/`);
+    expect(gh).toContain("status --porcelain -- architecture");
+    expect(gh).toContain(`"$PWD/architecture/archmap.config.json" ${VERSION}`);
+    expect(gh).not.toMatch(/__(CLI|DIR|VERSION)__/);
     init(root, { ci: "azure" });
     const az = read(".azure-pipelines", "archmap.yml");
-    expect(az).toContain(`${CLI} agent --base`);
-    expect(az).not.toMatch(/__(CLI|DIR)__/);
+    expect(az).toContain(`${CI_CLI} agent --base`);
+    expect(az).not.toMatch(/__(CLI|DIR|VERSION)__/);
+  });
+
+  it("keeps a workflow that differs from the template unless --force, and never bakes the pinned version in", () => {
+    init(root, { ci: "github" });
+    const file = join(root, ".github", "workflows", "archmap.yml");
+    const original = readFileSync(file, "utf8");
+    expect(original).not.toContain(`#v${VERSION}`);
+    expect(init(root, { ci: "github" }).lines).toContain(
+      "Kept .github/workflows/archmap.yml.",
+    );
+    // A new pin needs no new workflow: the same file is written.
+    const cfg = join(root, "architecture", "archmap.config.json");
+    writeFileSync(
+      cfg,
+      JSON.stringify({
+        ...JSON.parse(readFileSync(cfg, "utf8")),
+        archmap: "9.9.9",
+      }),
+    );
+    expect(init(root, { ci: "github" }).lines).toContain(
+      "Kept .github/workflows/archmap.yml.",
+    );
+    writeFileSync(file, original + "# mine\n");
+    const kept = init(root, { ci: "github" });
+    expect(kept.lines.join("\n")).toContain(
+      "Kept .github/workflows/archmap.yml: it differs from the workflow init writes. Run init --ci github --force to replace it.",
+    );
+    expect(readFileSync(file, "utf8")).toContain("# mine");
+    const forced = init(root, { ci: "github", force: true });
+    expect(forced.lines).toContain("Replaced .github/workflows/archmap.yml.");
+    expect(readFileSync(file, "utf8")).toBe(original);
   });
 
   it("uses --dir in the CLI command for a non-default folder", () => {
@@ -103,7 +137,10 @@ describe("init", () => {
     );
     expect(read("AGENTS.md")).toContain(`${CLI} --dir docs/map brief --base`);
     expect(read(".github", "workflows", "archmap.yml")).toContain(
-      "git status --porcelain -- docs/map",
+      "status --porcelain -- docs/map",
+    );
+    expect(read(".github", "workflows", "archmap.yml")).toContain(
+      `${CI_CLI} --dir docs/map check`,
     );
     expect(r.lines.at(-1)).toContain(`${CLI} --dir docs/map brief`);
   });
@@ -231,10 +268,7 @@ describe("init", () => {
       "<!-- archmap:start -->\n\n",
     );
     writeFileSync(join(root, "AGENTS.md"), agents);
-    const claude = read("CLAUDE.md").replace(
-      /^@AGENTS\.md$/m,
-      "  @AGENTS.md",
-    );
+    const claude = read("CLAUDE.md").replace(/^@AGENTS\.md$/m, "  @AGENTS.md");
     writeFileSync(join(root, "CLAUDE.md"), claude);
     init(root, {});
     expect(read("AGENTS.md")).toBe(agents);
