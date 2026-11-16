@@ -135,13 +135,39 @@ describe("runCheck", () => {
     expect(formatCheck(r, { strict: true }).ok).toBe(false);
   });
 
-  it("confirms a lead by evidence file", () => {
+  it("doesn't confirm a route by evidence citing its file: a new route in a cited file is a lead", () => {
     config();
     repo();
     api(
-      "endpoints:\n  - route: GET /elsewhere\n    evidence: apps/api/src/routes.ts#health\n",
+      "endpoints:\n  - route: GET /health\n    evidence: apps/api/src/routes.ts#health\n",
     );
-    expect(warnings().filter((w) => w.includes("GET /health"))).toEqual([]);
+    expect(warnings().filter((w) => w.includes("route"))).toEqual([]);
+    write(
+      "apps/api/src/routes.ts",
+      'import express from "express";\nconst app = express();\napp.get("/health", (_req, res) => res.send("ok"));\napp.delete("/users/:id", h);\n',
+    );
+    expect(warnings().filter((w) => w.includes("route"))).toEqual([
+      "unconfirmed lead: route DELETE /users/:id",
+    ]);
+  });
+
+  it("confirms infra and CI leads by evidence citing exactly their file, ./ and all", () => {
+    config();
+    write("docker-compose.yml", "services:\n  api:\n    build: .\n");
+    write(
+      ".github/workflows/deploy.yml",
+      "name: Deploy\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n",
+    );
+    const leads = () =>
+      runCheck(root, dir)
+        .leads.map((l) => l.key)
+        .filter((k) => /^scan:(infra|ci):/.test(k));
+    api();
+    expect(leads()).toHaveLength(2);
+    api(
+      "jobs:\n  - name: Deploy\n    evidence: ./.github/workflows/deploy.yml\nconnects:\n  - to: x\n    evidence: ./docker-compose.yml#api\n",
+    );
+    expect(leads()).toEqual([]);
   });
 
   it("drops leads listed in ignore", () => {
@@ -272,7 +298,9 @@ describe("unconfirmedLeads", () => {
       "scan:route:POST /a/b@apps/api/src/deep/a.ts",
       "scan:route:GET /w@apps/web/server.ts",
     ]);
-    expect(left(["scan:route:GET /users/@me@apps/api/src/users.ts"])).toHaveLength(2);
+    expect(
+      left(["scan:route:GET /users/@me@apps/api/src/users.ts"]),
+    ).toHaveLength(2);
     expect(left(["scan:route:GET /users/@me@apps/web/**"])).toHaveLength(3);
     expect(left(["scan:route:POST *"])).toHaveLength(2);
   });
@@ -288,11 +316,11 @@ describe("unconfirmedLeads", () => {
         .map((l) => l.key)
         .filter((k) => k.includes("_URL"));
     expect(left(["scan:*@.vendor/**"])).toEqual([
-      "scan:outside:API_URL@apps/api/.env.example",
+      "scan:env:API_URL@apps/api/.env.example",
     ]);
     expect(left(["scan:*@**/.env.*"])).toEqual([]);
     expect(left(["scan:*@apps/*/.env.example"])).toEqual([
-      "scan:outside:REDIS_URL@.vendor/x/.env.sample",
+      "scan:env:REDIS_URL@.vendor/x/.env.sample",
     ]);
   });
 
@@ -348,9 +376,7 @@ describe("unconfirmedLeads", () => {
         s,
         [doc("services", "api", { endpoints: [{ route }] })],
         [],
-      ).some(
-        (l) => l.key === "scan:route:GET /health@apps/api/src/routes.ts",
-      );
+      ).some((l) => l.key === "scan:route:GET /health@apps/api/src/routes.ts");
     expect(has("GET /health")).toBe(false);
     expect(has("GET /health/")).toBe(false);
     expect(has("GET /other")).toBe(true);
@@ -389,6 +415,61 @@ describe("unconfirmedLeads", () => {
     ).toEqual([
       "scan:app:apps/api@apps/api/package.json",
       "scan:table:users@schema.prisma",
+    ]);
+  });
+});
+
+describe("unconfirmedLeads: env and SDK leads", () => {
+  const doc = (
+    folder: "services" | "stores" | "external",
+    id: string,
+    data: Record<string, unknown>,
+    body = "",
+  ) => ({ id, folder, file: `${folder}/${id}.md`, data, body });
+
+  it("gives .env.example variables their own kind, confirmed by a mention in an external doc's data or any doc's body", () => {
+    const s = scan(root);
+    s.outside.push(
+      { name: "PORT", via: "env", file: ".env.example" },
+      { name: "STRIPE_KEY", via: "env", file: ".env.example" },
+      { name: "SENTRY_DSN", via: "env", file: ".env.example" },
+    );
+    const left = (docs: ReturnType<typeof doc>[]) =>
+      unconfirmedLeads(s, docs, []).map((l) => l.key);
+    expect(left([])).toEqual([
+      "scan:env:PORT@.env.example",
+      "scan:env:STRIPE_KEY@.env.example",
+      "scan:env:SENTRY_DSN@.env.example",
+    ]);
+    expect(
+      left([
+        doc("external", "stripe", { env: ["STRIPE_KEY"] }),
+        doc("services", "api", {}, "Listens on `PORT` (default 3000)."),
+      ]),
+    ).toEqual(["scan:env:SENTRY_DSN@.env.example"]);
+    // A word inside a longer name, or a service doc's frontmatter, is no mention.
+    expect(
+      left([
+        doc("external", "sentry", { notes: "set SENTRY_DSN_URL" }),
+        doc("services", "api", { env: ["PORT"] }),
+      ]),
+    ).toHaveLength(3);
+  });
+
+  it("confirms an SDK lead by an external doc named for the service or a part of it", () => {
+    const s = scan(root);
+    s.outside.push({ name: "Azure", via: "sdk", file: "package.json" });
+    const left = (id: string, name?: string) =>
+      unconfirmedLeads(s, [doc("external", id, name ? { name } : {})], [])
+        .map((l) => l.key)
+        .filter((k) => k.startsWith("scan:outside:"));
+    expect(left("azure")).toEqual([]);
+    expect(left("azure-blob")).toEqual([]);
+    expect(left("azure.storage")).toEqual([]);
+    expect(left("blob", "Azure Blob Storage")).toEqual([]);
+    expect(left("azurite")).toEqual(["scan:outside:Azure@package.json"]);
+    expect(left("blob", "Microsoft Azure")).toEqual([
+      "scan:outside:Azure@package.json",
     ]);
   });
 });

@@ -13,7 +13,8 @@ const git = (cwd: string, args: string[]): string =>
     maxBuffer: 64 * 1024 * 1024,
   });
 
-const lines = (text: string): string[] => text.split("\n").filter(Boolean);
+/** The paths in `-z` output: NUL-separated, so names with newlines or non-ASCII characters come through as they are. */
+const paths = (text: string): string[] => text.split("\0").filter(Boolean);
 
 const gitError = (err: unknown): string => {
   const e = err as Error & { stderr?: string };
@@ -38,12 +39,25 @@ const resolves = (root: string, ref: string): boolean => {
   }
 };
 
+const isRef = (root: string, ref: string): boolean => {
+  try {
+    git(root, ["show-ref", "--verify", "--quiet", ref]);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
- * The ref to compare with: `base` itself, or `origin/<base>` when only the
- * remote branch exists (a CI checkout often has no local branch).
+ * The ref to compare with: `origin/<base>` when origin has that branch (a
+ * local branch of the same name may be stale, and a CI checkout often has
+ * none), else `base` itself. Only a branch name is looked up on origin, so
+ * `HEAD`, `main~1` or a commit is used as given.
  */
 export const resolveBase = (root: string, base: string): string =>
-  !resolves(root, base) && resolves(root, `origin/${base}`)
+  base !== "HEAD" &&
+  isRef(root, `refs/remotes/origin/${base}`) &&
+  resolves(root, `origin/${base}`)
     ? `origin/${base}`
     : base;
 
@@ -80,10 +94,11 @@ export const changedFiles = (root: string, name: string): string[] => {
   try {
     return [
       ...new Set([
-        ...lines(
+        ...paths(
           git(root, [
             "diff",
             "--name-only",
+            "-z",
             "--no-renames",
             "--relative",
             `${base}...HEAD`,
@@ -100,10 +115,17 @@ export const changedFiles = (root: string, name: string): string[] => {
 /** Files that differ from HEAD (staged or not) or are untracked, relative to `root`. */
 export const uncommittedFiles = (root: string): string[] => [
   ...new Set([
-    ...lines(
-      git(root, ["diff", "--name-only", "--no-renames", "--relative", "HEAD"]),
+    ...paths(
+      git(root, [
+        "diff",
+        "--name-only",
+        "-z",
+        "--no-renames",
+        "--relative",
+        "HEAD",
+      ]),
     ),
-    ...lines(git(root, ["ls-files", "--others", "--exclude-standard"])),
+    ...paths(git(root, ["ls-files", "-z", "--others", "--exclude-standard"])),
   ]),
 ];
 
@@ -111,28 +133,31 @@ export type Commit = { message: string; files: string[] };
 
 /** The commits in `base..HEAD`, oldest first, with their messages and the files each touched (relative to `root`). */
 export const commitsSince = (root: string, base: string): Commit[] => {
-  const parts = git(root, [
+  // With -z each commit is `\0\x01<hash>\0<message>\0`, then, when it
+  // touched files, `\0\n` and each path ending in \0. A message holds no NUL,
+  // so `\0\x01` only starts a commit.
+  const out = git(root, [
     "log",
     "--reverse",
     "--no-renames",
     "--relative",
     "--name-only",
-    "--format=%x00%H%x00%B%x00",
+    "-z",
+    "--format=%x00%x01%H%x00%B%x00",
     `${base}..HEAD`,
-  ]).split("\0");
-  const out: Commit[] = [];
-  // parts: "", then (hash, message, files) per commit.
-  for (let i = 1; i + 1 < parts.length; i += 3)
-    out.push({
-      message: parts.at(i + 1) ?? "",
-      files: lines(parts.at(i + 2) ?? ""),
+  ]);
+  return out
+    .split("\0\x01")
+    .slice(1)
+    .map((chunk) => {
+      const hashEnd = chunk.indexOf("\0");
+      const messageEnd = chunk.indexOf("\0", hashEnd + 1);
+      return {
+        message: chunk.slice(hashEnd + 1, messageEnd),
+        files: paths(chunk.slice(messageEnd + 1).replace(/^\0*\n/, "")),
+      };
     });
-  return out;
 };
-
-/** The commit messages in `base..HEAD`. */
-export const commitMessages = (root: string, base: string): string =>
-  git(root, ["log", `${base}..HEAD`, "--format=%B"]);
 
 /** A file's contents at `ref`, or null when it isn't there. */
 export const fileAt = (

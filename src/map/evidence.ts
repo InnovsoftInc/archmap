@@ -2,12 +2,9 @@
 
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
+import { isObj, list } from "../util.ts";
 import { isPlanned } from "./schema.ts";
 import type { Doc, Finding } from "./types.ts";
-
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const entries = (doc: Doc, key: string): [unknown, string][] =>
   list(Reflect.get(doc.data, key)).map((e, i) => [e, `${key}[${i}]`]);
 
@@ -18,7 +15,7 @@ type Cited = { field: string; evidence: string; planned?: true };
 export const evidenceOf = (doc: Doc): Cited[] => {
   const out: Cited[] = [];
   const add = (entry: unknown, path: string) => {
-    if (isObject(entry) && typeof entry.evidence === "string")
+    if (isObj(entry) && typeof entry.evidence === "string")
       out.push({
         field: `${path}.evidence`,
         evidence: entry.evidence,
@@ -29,7 +26,7 @@ export const evidenceOf = (doc: Doc): Cited[] => {
     for (const [entry, path] of entries(doc, key)) add(entry, path);
   for (const [table, path] of entries(doc, "tables")) {
     add(table, path);
-    if (isObject(table))
+    if (isObj(table))
       list(table.columns).forEach((c, i) => add(c, `${path}.columns[${i}]`));
   }
   for (const [entry, path] of entries(doc, "enums")) add(entry, path);

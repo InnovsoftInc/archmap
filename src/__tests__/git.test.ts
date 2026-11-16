@@ -11,10 +11,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   changedFiles,
-  commitMessages,
+  commitsSince,
   dirtyState,
   fileAt,
   repoRoot,
+  resolveBase,
+  uncommittedFiles,
 } from "../git.ts";
 
 let root: string;
@@ -55,7 +57,6 @@ describe("git helpers", () => {
       "committed.txt",
       "sub/new.txt",
     ]);
-    expect(commitMessages(root, "main~1")).toContain("Archmap: none - tidy");
   });
 
   it("names the ref when it is unknown", () => {
@@ -112,5 +113,45 @@ describe("git helpers", () => {
     write("a.txt", "changed\n");
     expect(fileAt(root, "HEAD", "a.txt")).toBe("a\n");
     expect(fileAt(root, "HEAD", "missing.txt")).toBeNull();
+  });
+  it("lists non-ASCII and odd paths as they are, not C-quoted", () => {
+    write("src/café.ts", "x\n");
+    write('src/a "quoted" name.ts', "x\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "accents\n\nbody");
+    git("commit", "-q", "--allow-empty", "-m", "empty");
+    write("src/naïve.ts", "x\n");
+    write("über.txt", "x\n");
+    git("add", "über.txt");
+    expect(uncommittedFiles(root).sort()).toEqual(["src/naïve.ts", "über.txt"]);
+    expect(changedFiles(root, "main~2")).toEqual([
+      'src/a "quoted" name.ts',
+      "src/café.ts",
+      "src/naïve.ts",
+      "über.txt",
+    ]);
+    expect(commitsSince(root, "main~2")).toEqual([
+      {
+        message: "accents\n\nbody\n",
+        files: ['src/a "quoted" name.ts', "src/café.ts"],
+      },
+      { message: "empty\n", files: [] },
+    ]);
+  });
+
+  it("resolveBase prefers origin/<base> over a stale local branch", () => {
+    expect(resolveBase(root, "main")).toBe("main");
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    write("d.txt", "d\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "local only");
+    expect(resolveBase(root, "main")).toBe("origin/main");
+    git("update-ref", "refs/remotes/origin/dev", "HEAD");
+    expect(resolveBase(root, "dev")).toBe("origin/dev");
+    // A ref that isn't a branch name is used as given.
+    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    expect(resolveBase(root, "HEAD")).toBe("HEAD");
+    expect(resolveBase(root, "main~1")).toBe("main~1");
+    expect(resolveBase(root, "nope")).toBe("nope");
   });
 });

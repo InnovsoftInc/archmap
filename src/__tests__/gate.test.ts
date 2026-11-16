@@ -7,6 +7,7 @@ import {
   git,
   write,
   commit,
+  config,
   problem,
   useGateRepo,
 } from "./gate-repo.ts";
@@ -114,4 +115,38 @@ describe("map gate", () => {
     expect(problem()).toContain(`${file}: structural file`);
   });
 
+  it.each([".devcontainer/Dockerfile", "infra/.terraform/x.tf"])(
+    "fails on the structural file %s inside a dot folder",
+    (file) => {
+      write(file, "x\n");
+      expect(problem()).toContain(`${file}: structural file`);
+    },
+  );
+
+  it("matches watch and skip globs inside dot folders", () => {
+    config({ watch: ["**/*.env.json"] });
+    commit("config");
+    write(".config/app.env.json", "{}\n");
+    expect(problem()).toContain(
+      ".config/app.env.json: matches watch **/*.env.json",
+    );
+    config({ watch: [".devcontainer/*"], agent: { skip: ["**/Dockerfile"] } });
+    commit("skip");
+    write(".devcontainer/Dockerfile", "FROM x\n");
+    write(".devcontainer/devcontainer.json", "{}\n");
+    expect(problem()).toContain(".devcontainer/devcontainer.json");
+    expect(problem()).not.toContain(".devcontainer/Dockerfile");
+  });
+
+  it("names the doc whose evidence cites a changed file as ./path", () => {
+    write(
+      "architecture/services/api.md",
+      "---\nname: API\nstatus: live\nkind: api\nendpoints:\n  - route: GET /health\n    evidence: ./apps/api/src/routes.ts\n---\nServes requests.\n\n## How it works\n\nx\n\n## For developers\n\nx\n",
+    );
+    commit("dot slash\n\nArchmap: none - test setup");
+    write("apps/api/src/routes.ts", "// changed\n");
+    expect(problem()).toContain(
+      "apps/api/src/routes.ts: evidence of services/api.md",
+    );
+  });
 });

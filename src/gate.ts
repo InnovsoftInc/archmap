@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, matchesGlob, relative, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import {
   changedFiles,
   commitsSince,
@@ -23,6 +23,7 @@ import { loadMap } from "./map/load.ts";
 import { leadsOf, unconfirmedLeads } from "./map/leads.ts";
 import type { Finding, LoadedMap } from "./map/types.ts";
 import { scan, scannerReads } from "./scan/index.ts";
+import { evidencePath, globsMatcher, mapPrefix } from "./util.ts";
 import { cliCommand } from "./version.ts";
 
 export type GateHit = { file: string; why: string };
@@ -52,8 +53,9 @@ const PACKAGE_KEYS = [
   "workspaces",
 ] as const;
 
-const matches = (file: string, globs: string[]): string | undefined =>
-  globs.find((g) => matchesGlob(file, g));
+// Globs match dot folders too (see util.ts): `**/Dockerfile*` covers
+// `.devcontainer/Dockerfile`, `**/*.tf` covers `infra/.terraform/x.tf`.
+const structural = globsMatcher(STRUCTURAL);
 
 /** What in a package.json is architectural: the package names it depends on, and its workspaces. Versions are not. */
 const dependencyShape = (text: string | null): string | null => {
@@ -82,11 +84,6 @@ const dependenciesChanged = (
   const before = dependencyShape(fileAt(root, base, file));
   const after = dependencyShape(now);
   return before === null || after === null || before !== after;
-};
-
-const mapPrefix = (root: string, dir: string): string => {
-  const rel = relative(resolve(root), resolve(root, dir)).split("\\").join("/");
-  return rel ? `${rel}/` : "";
 };
 
 const isPackageJson = (file: string): boolean =>
@@ -134,17 +131,17 @@ export const architecturalFiles = (
   const base = resolveBase(root, name);
   const map = loadMap(dir);
   const prefix = mapPrefix(root, dir);
-  const skip = map.config.agent?.skip ?? [];
-  const watch = map.config.watch ?? [];
+  const skipped = globsMatcher(map.config.agent?.skip ?? []);
+  const watched = globsMatcher(map.config.watch ?? []);
   const changed = changedFiles(root, base).filter(
-    (f) => !(prefix && f.startsWith(prefix)) && !matches(f, skip),
+    (f) => !(prefix && f.startsWith(prefix)) && !skipped(f),
   );
   if (!changed.length) return [];
 
   const evidenceOwner = new Map<string, string>();
   for (const doc of map.docs)
     for (const c of evidenceOf(doc)) {
-      const file = c.evidence.split("#")[0];
+      const file = evidencePath(c.evidence);
       if (!evidenceOwner.has(file)) evidenceOwner.set(file, doc.file);
     }
   const newLeads = newLeadsByFile(root, base, changed, map);
@@ -153,10 +150,10 @@ export const architecturalFiles = (
   for (const file of changed) {
     const owner = evidenceOwner.get(file);
     const lead = newLeads.get(file);
-    const glob = matches(file, watch);
+    const glob = watched(file);
     let why: string | null = null;
     if (owner) why = `evidence of ${owner}`;
-    else if (matches(file, STRUCTURAL)) why = "structural file";
+    else if (structural(file)) why = "structural file";
     else if (isPackageJson(file)) {
       if (dependenciesChanged(root, base, file)) why = "dependencies changed";
     } else if (lead) why = `new lead: ${lead}`;

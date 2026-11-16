@@ -1,7 +1,15 @@
 // Leads: things the scanner saw in the code that the map doesn't yet cover.
 
-import { matchesGlob } from "node:path";
 import type { Scan } from "../scan/index.ts";
+import {
+  evidencePath,
+  fileMatcher,
+  isObj,
+  isUnder,
+  list,
+  normalizePath,
+  str,
+} from "../util.ts";
 import { evidenceOf } from "./evidence.ts";
 import type { Doc } from "./types.ts";
 
@@ -30,12 +38,21 @@ const rawLeads = (s: Scan): Raw[] => [
     file: t.file,
     text: `table ${t.name}`,
   })),
-  ...s.outside.map((o) => ({
-    kind: "outside",
-    name: o.name,
-    file: o.file,
-    text: `outside service ${o.name}`,
-  })),
+  ...s.outside.map((o) =>
+    o.via === "env"
+      ? {
+          kind: "env",
+          name: o.name,
+          file: o.file,
+          text: `environment variable ${o.name}`,
+        }
+      : {
+          kind: "outside",
+          name: o.name,
+          file: o.file,
+          text: `outside service ${o.name}`,
+        },
+  ),
   ...s.infra.map((i) => ({
     kind: "infra",
     name: `${i.type}:${i.name}`,
@@ -58,40 +75,6 @@ const toLead = (r: Raw): Lead => ({
 });
 
 export const leadsOf = (s: Scan): Lead[] => rawLeads(s).map(toLead);
-
-// `**` is any run of folders, `*` and `?` stay inside one folder. Unlike
-// path.matchesGlob, these also match dotfiles (`.archmap-local/**` covers
-// `.env.sample`), and `[` is literal, so `app/users/[id]/route.ts` names
-// only that file. A pattern with `{a,b}` also goes to matchesGlob.
-const globRegex = (pattern: string): RegExp => {
-  let out = "";
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern.charAt(i);
-    if (c === "*" && pattern.charAt(i + 1) === "*") {
-      const slash = pattern.charAt(i + 2) === "/";
-      out += slash ? "(?:.*/)?" : ".*";
-      i += slash ? 2 : 1;
-    } else if (c === "*") out += "[^/]*";
-    else if (c === "?") out += "[^/]";
-    else out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  // eslint-disable-next-line security/detect-non-literal-regexp -- escaped
-  return new RegExp(`^${out}$`, "s");
-};
-
-const fileMatcher = (pattern: string): ((file: string) => boolean) => {
-  const re = globRegex(pattern);
-  const braces = pattern.includes("{");
-  return (file) => {
-    if (file === pattern || re.test(file)) return true;
-    if (!braces) return false;
-    try {
-      return matchesGlob(file, pattern);
-    } catch {
-      return false;
-    }
-  };
-};
 
 // In the name part `*` is any run of characters, `/` included, since route
 // names hold paths.
@@ -122,27 +105,6 @@ const ignoreMatcher = (pattern: string): Ignore => {
   return (n, f) => whole(n) || (name(n) && file(f));
 };
 
-// A code entry as a repo-relative folder: `./infra/` and `infra\` are
-// `infra`, `./` is `.`.
-const normalizePath = (p: string): string => {
-  if (p.trim() === "") return "";
-  const s = p
-    .replace(/\\/g, "/")
-    .replace(/^(?:\.\/)+/, "")
-    .replace(/\/+$/, "");
-  return s === "" ? "." : s;
-};
-
-// `path` is `folder` or inside it; the root folder covers nothing this way.
-const isUnder = (path: string, folder: string): boolean =>
-  folder !== "." &&
-  folder !== "" &&
-  (path === folder || path.startsWith(`${folder}/`));
-
-const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const str = (v: unknown): string | undefined =>
-  typeof v === "string" ? v : undefined;
-
 const normalizeRoute = (method: string, path: string): string =>
   `${method.toUpperCase()} ${path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path}`;
 const normalizeRouteText = (route: string): string => {
@@ -152,13 +114,43 @@ const normalizeRouteText = (route: string): string => {
     : normalizeRoute(route.slice(0, space), route.slice(space + 1));
 };
 
+// Every identifier-like word in `v`: strings, and the strings inside lists
+// and objects, at any depth.
+const WORD = /[A-Za-z_][A-Za-z0-9_]*/g;
+const wordsIn = (v: unknown, out: Set<string>): void => {
+  if (typeof v === "string") for (const [w] of v.matchAll(WORD)) out.add(w);
+  else if (Array.isArray(v)) for (const x of v) wordsIn(x, out);
+  else if (isObj(v)) for (const x of Object.values(v)) wordsIn(x, out);
+};
+
+// An SDK lead's name is the scanner's service name ("Azure", "AWS",
+// "SendGrid"). An external doc covers it when its id or name is that name, or
+// starts with it and a separator, so `azure-blob`, `aws.s3`, `azure/storage`
+// and "Azure Blob Storage" all cover "Azure" (but `azurite` does not).
+const coversService = (doc: string, lead: string): boolean =>
+  doc === lead ||
+  (doc.startsWith(lead) && /^[-/. ]/.test(doc.slice(lead.length)));
+
+/**
+ * The leads no map doc confirms and no ignore entry drops. How each kind is confirmed:
+ * - route: an `endpoints[].route` naming it (method case and a trailing slash ignored);
+ * - table: a `tables[].name` in a store;
+ * - outside (an SDK in package.json): an external doc whose id or name covers it (coversService);
+ * - env (a variable in a `.env.example`): its name as a word anywhere in an
+ *   external doc's frontmatter (an `env` list, say) or in any doc's body;
+ * - app: a code entry that is its path or inside it;
+ * - infra, ci: a code entry that is the file or a folder above it;
+ * - app, infra, ci also: an `evidence` entry citing the lead's file.
+ * Routes, tables, outside services and variables are confirmed by name only:
+ * evidence citing their file says nothing about a new route added to it.
+ */
 export const unconfirmedLeads = (
   s: Scan,
   docs: Doc[],
   ignore: string[],
 ): Lead[] => {
   const evidenceFiles = new Set(
-    docs.flatMap((d) => evidenceOf(d).map((c) => c.evidence.split("#")[0])),
+    docs.flatMap((d) => evidenceOf(d).map((c) => evidencePath(c.evidence))),
   );
   // An app is covered by a code entry that is its path or a path inside it;
   // the root app (".") only by a code entry of ".".
@@ -171,10 +163,7 @@ export const unconfirmedLeads = (
   const routes = new Set(
     docs.flatMap((d) =>
       list(d.data.endpoints).flatMap((e) => {
-        const route =
-          typeof e === "object" && e !== null
-            ? str(Reflect.get(e, "route"))
-            : undefined;
+        const route = isObj(e) ? str(e.route) : undefined;
         return route ? [normalizeRouteText(route)] : [];
       }),
     ),
@@ -183,31 +172,28 @@ export const unconfirmedLeads = (
     docs
       .filter((d) => d.folder === "stores")
       .flatMap((d) =>
-        list(d.data.tables).flatMap((t) =>
-          typeof t === "object" && t !== null
-            ? [str(Reflect.get(t, "name"))]
-            : [],
-        ),
+        list(d.data.tables).flatMap((t) => (isObj(t) ? [str(t.name)] : [])),
       ),
   );
-  const external = new Set(
-    docs
-      .filter((d) => d.folder === "external")
-      .flatMap((d) => [d.id, str(d.data.name)])
-      .flatMap((n) => (n ? [n.toLowerCase()] : [])),
-  );
-  // Infrastructure, Docker and CI leads are also confirmed by a code entry
-  // that is the lead's file or a folder above it.
+  const externalDocs = docs.filter((d) => d.folder === "external");
+  const external = externalDocs
+    .flatMap((d) => [d.id, str(d.data.name)])
+    .flatMap((n) => (n ? [n.toLowerCase()] : []));
+  const mentioned = new Set<string>();
+  for (const d of externalDocs) wordsIn(d.data, mentioned);
+  for (const d of docs) wordsIn(d.body, mentioned);
   const coversFile = (file: string): boolean =>
     codes.some((c) => isUnder(file, c));
   const confirmed = (lead: Raw): boolean => {
-    if (evidenceFiles.has(lead.file)) return true;
     const { kind, name } = lead;
-    if (kind === "app")
-      return codes.some((c) => c === name || isUnder(c, name));
     if (kind === "route") return routes.has(normalizeRouteText(name));
     if (kind === "table") return tables.has(name);
-    if (kind === "outside") return external.has(name.toLowerCase());
+    if (kind === "outside")
+      return external.some((e) => coversService(e, name.toLowerCase()));
+    if (kind === "env") return mentioned.has(name);
+    if (evidenceFiles.has(lead.file)) return true;
+    if (kind === "app")
+      return codes.some((c) => c === name || isUnder(c, name));
     if (kind === "infra" || kind === "ci") return coversFile(lead.file);
     return false;
   };
@@ -218,4 +204,3 @@ export const unconfirmedLeads = (
     return [toLead(r)];
   });
 };
-
