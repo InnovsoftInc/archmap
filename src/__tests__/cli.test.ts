@@ -44,7 +44,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 const SERVICE =
   "---\nname: X\nstatus: live\nkind: api\n---\nDoes x.\n\n## How it works\n\nx\n\n## For developers\n\nx\n";
 
-const REMOVED = ["install", "upgrade", "claude", "save", "publish", "drift"];
+const REMOVED = ["install", "claude", "save", "publish", "drift"];
 
 const COMMANDS = [
   "init",
@@ -55,10 +55,12 @@ const COMMANDS = [
   "dev",
   "build",
   "migrate",
+  "upgrade",
+  "doctor",
 ];
 
 describe("archmap CLI", () => {
-  it("--help lists the eight commands and none of the removed ones", () => {
+  it("--help lists the commands and none of the removed ones", () => {
     const r = run(["--help"]);
     expect(r.status).toBe(0);
     const listed = (name: string) =>

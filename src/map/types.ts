@@ -27,6 +27,8 @@ export type MapConfig = {
   archmap?: string;
   name: string;
   cli?: string;
+  /** "auto": `dev` and `brief` move the map to a new release themselves. Otherwise they only say one is out. */
+  upgrade?: string;
   /** The branch pull requests target. */
   base?: string;
   agent?: { command?: string; skip?: string[] };

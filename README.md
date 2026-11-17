@@ -57,6 +57,10 @@ A file whose default lane isn't in the list goes to the first lane on the same s
 
 `check` also keeps the documentation honest. It warns, once per file, about endpoints that have no `does` or leave a path parameter out of `params`. With `--base`, an endpoint the branch adds to an existing map must have both, or the check fails; and an entry whose cited code changed on the branch while the entry stayed word for word the same is warned about as possibly out of date (for `file#Symbol` evidence, only when a function that mentions the symbol changed). Correcting the entry clears the warning.
 
+### Staying up to date
+
+`brief`, `dev`, `check` and `doctor` look for a newer archmap release (once a day, never in CI, and not with `--offline` or `ARCHMAP_NO_UPDATE_CHECK=1`). A map with `"upgrade": "auto"` in `archmap.config.json`, which `init` writes for new maps, upgrades itself when `brief` or `dev` runs and then carries on at the new version; any other map prints the command to run. Either way the upgrade changes files (`archmap.config.json`, `package.json`, `README.md`, `AGENTS.md`) that need committing: CI runs the version the repository pins, so it moves when that commit merges. A map that sets its own `cli` isn't upgraded.
+
 ## Commands
 
 Run them as `npx -y github:InnovsoftInc/archmap#v0.4.3 <command>`, written `archmap` below.
@@ -70,6 +74,7 @@ Run them as `npx -y github:InnovsoftInc/archmap#v0.4.3 <command>`, written `arch
 | `archmap agent [--task ...] [--base <ref>]`                            | Runs `agent.command` from the config on the brief                               |
 | `archmap dev [--port 4321]`                                            | Serves the map locally and picks up file changes                                |
 | `archmap build [--out archmap-site] [--public]`                        | Writes the map as a static site for any static host                             |
+| `archmap upgrade`                                                      | Moves the map to the latest release: sets the pinned version in `archmap.config.json` and reruns `init` at that version to refresh the start script, the README and `AGENTS.md` sections and the Claude skill |
 | `archmap doctor`                                                       | Says what would make archmap fail in this project or shell (a Node version the project's `engines` rejects, a missing start script), with the command that fixes each; `brief` lists the same under "Fix the setup" |
 | `archmap migrate`                                                      | Turns an old `saves/` ledger into map files                                     |
 

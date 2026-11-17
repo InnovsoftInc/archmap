@@ -4,8 +4,16 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { spawnSync } from "node:child_process";
 import { runAgent } from "./agent.ts";
 import { doctor } from "./doctor.ts";
+import {
+  available,
+  latestRelease,
+  notice,
+  npxArgs,
+  upgrade,
+} from "./upgrade.ts";
 import { brief, type Task } from "./brief.ts";
 import { formatCheck, runCheck } from "./check.ts";
 import { repoRoot } from "./git.ts";
@@ -47,6 +55,8 @@ Usage: archmap <command> [options]
   build [--out archmap-site] [--public] [--offline]
                                  Write the map as a static site
   migrate                        Turn an old saves ledger into map files
+  upgrade                        Move the map to the latest archmap release: sets
+                                 the pinned version and refreshes what init wrote
   doctor                         Say what would make archmap fail in this project
                                  or shell (Node version, missing script), with
                                  the command that fixes each
@@ -133,9 +143,37 @@ const main = async (argv: string[]): Promise<void> => {
     }
   }
 
-  const warning = versionWarning(loadMap(dir).config);
-  if (warning) console.error(warning);
+  const config = loadMap(dir).config;
   const root = projectRoot();
+
+  if (cmd === "upgrade")
+    return print(upgrade(root, dir, latestRelease({ fresh: true })));
+
+  // A person or their agent is here, not CI: say when a newer release is out,
+  // and move to it first when the map asks for that. The upgraded version
+  // then runs the command; ARCHMAP_UPGRADED stops it looking again.
+  const next =
+    ["brief", "dev", "check", "doctor"].includes(cmd) &&
+    !values.json &&
+    !values.offline &&
+    !process.env.ARCHMAP_UPGRADED
+      ? available(config, latestRelease())
+      : null;
+  if (next && config.upgrade === "auto" && (cmd === "brief" || cmd === "dev")) {
+    const done = upgrade(root, dir, next);
+    done.lines.forEach((l) => console.error(l));
+    if (done.ok) {
+      const again = spawnSync("npx", [...npxArgs(next), ...argv], {
+        stdio: "inherit",
+        env: { ...process.env, ARCHMAP_UPGRADED: "1" },
+      });
+      process.exitCode = again.status ?? 1;
+      return;
+    }
+  } else if (next) console.error(notice(config, next, dir, root));
+
+  const warning = versionWarning(config);
+  if (warning) console.error(warning);
 
   switch (cmd) {
     case "check":
