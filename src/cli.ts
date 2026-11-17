@@ -5,6 +5,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { runAgent } from "./agent.ts";
+import { doctor } from "./doctor.ts";
 import { brief, type Task } from "./brief.ts";
 import { formatCheck, runCheck } from "./check.ts";
 import { repoRoot } from "./git.ts";
@@ -46,6 +47,9 @@ Usage: archmap <command> [options]
   build [--out archmap-site] [--public] [--offline]
                                  Write the map as a static site
   migrate                        Turn an old saves ledger into map files
+  doctor                         Say what would make archmap fail in this project
+                                 or shell (Node version, missing script), with
+                                 the command that fixes each
 
 Options: --dir <folder> (default: architecture)
 `;
@@ -148,6 +152,8 @@ const main = async (argv: string[]): Promise<void> => {
       return print(runAgent(root, dir, { task, base: values.base }));
     case "migrate":
       return print(migrate(root, dir));
+    case "doctor":
+      return print(doctor(root, dir));
     case "build":
       return print({
         ok: true,

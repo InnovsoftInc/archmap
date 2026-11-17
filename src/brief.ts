@@ -7,6 +7,7 @@ import { changedFiles, defaultBase } from "./git.ts";
 import { PACKAGE_ROOT } from "./home.ts";
 import { evidenceOf } from "./map/evidence.ts";
 import type { Doc } from "./map/types.ts";
+import { troubleLines, troubles } from "./doctor.ts";
 import { cliCommand } from "./version.ts";
 import { strings } from "./util.ts";
 
@@ -46,12 +47,18 @@ const covers = (doc: Doc, file: string): boolean =>
     return file === prefix || file.startsWith(`${prefix}/`);
   }) || evidenceOf(doc).some((c) => c.evidence.split("#")[0] === file);
 
-const groundRules = (task: Task, dir: string, forAgent: boolean): string => {
+const groundRules = (
+  task: Task,
+  dir: string,
+  forAgent: boolean,
+  cli: string,
+): string => {
   const rules = [
     "The existing map, including people's edits, stands unless the code contradicts it.",
     "Write for every audience, in heading order: a plain summary first, then `## How it works`, then `## For developers`.",
     "When the code doesn't show a fact, ask, or leave it out. Don't guess.",
     `Edit only files in the map folder (\`${dir}\`).`,
+    `If a command fails because of the setup, not the map (the Node version, the package manager, a missing tool or script), don't stop at reporting it. Run \`${cli} doctor\`, fix what only changes your own shell, and tell the person what failed, why, and the exact command that fixes it.`,
   ];
   if (task === "update")
     rules.push(
@@ -82,6 +89,19 @@ export const brief = (
     template(task),
     "",
   ];
+
+  // What will fail in this shell whatever the map says, so the agent can
+  // repair it or tell the person how.
+  const broken = troubles(root, dir, check.map.config);
+  if (broken.length)
+    out.push(
+      "## Fix the setup",
+      "",
+      "These will make commands fail here. Fix the ones that only change your own shell; in your final message tell the person each one that is left, with its fix.",
+      "",
+      ...troubleLines(broken),
+      "",
+    );
 
   if (task === "update") {
     const base = opts.base ?? check.map.config.base ?? defaultBase(root);
@@ -138,7 +158,7 @@ export const brief = (
     "",
     "## Ground rules",
     "",
-    groundRules(task, folder, opts.forAgent ?? false),
+    groundRules(task, folder, opts.forAgent ?? false, cli),
     "",
     "## Current check results",
     "",

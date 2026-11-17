@@ -68,6 +68,7 @@ Run them as `npx -y github:InnovsoftInc/archmap#v0.4.0 <command>`, written `arch
 | `archmap agent [--task ...] [--base <ref>]`                            | Runs `agent.command` from the config on the brief                               |
 | `archmap dev [--port 4321]`                                            | Serves the map locally and picks up file changes                                |
 | `archmap build [--out archmap-site] [--public]`                        | Writes the map as a static site for any static host                             |
+| `archmap doctor`                                                       | Says what would make archmap fail in this project or shell (a Node version the project's `engines` rejects, a missing start script), with the command that fixes each; `brief` lists the same under "Fix the setup" |
 | `archmap migrate`                                                      | Turns an old `saves/` ledger into map files                                     |
 
 All of them take `--dir <folder>` (default `architecture`). Every command except `init` and `scan` warns on stderr when `archmap.config.json` pins a different version than the one running. Errors print their message and exit 1.

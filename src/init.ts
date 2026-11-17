@@ -64,7 +64,10 @@ const packageName = (root: string): string | undefined => {
 };
 
 // How the project's package manager runs a package.json script.
-const runScript = (root: string, pkg: Record<string, unknown>): string => {
+export const runScript = (
+  root: string,
+  pkg: Record<string, unknown>,
+): string => {
   const pm = typeof pkg.packageManager === "string" ? pkg.packageManager : "";
   const has = (file: string) => existsSync(join(root, file));
   if (pm.startsWith("pnpm@") || has("pnpm-lock.yaml")) return "pnpm";
