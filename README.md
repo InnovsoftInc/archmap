@@ -74,6 +74,7 @@ Run them as `npx -y github:InnovsoftInc/archmap#v0.4.4 <command>`, written `arch
 | `archmap agent [--task ...] [--base <ref>]`                            | Runs `agent.command` from the config on the brief                               |
 | `archmap dev [--port 4321]`                                            | Serves the map locally and picks up file changes                                |
 | `archmap build [--out archmap-site] [--public]`                        | Writes the map as a static site for any static host                             |
+| `archmap skill`                                                        | Installs the `/archmap` skill for Claude Code in your own skills folder (`~/.claude/skills/archmap`), so it works in every repository, with or without a map. Run it again after upgrading to refresh it |
 | `archmap upgrade`                                                      | Moves the map to the latest release: sets the pinned version in `archmap.config.json` and reruns `init` at that version to refresh the start script, the README and `AGENTS.md` sections and the Claude skill |
 | `archmap doctor`                                                       | Says what would make archmap fail in this project or shell (a Node version the project's `engines` rejects, a missing start script), with the command that fixes each; `brief` lists the same under "Fix the setup" |
 | `archmap migrate`                                                      | Turns an old `saves/` ledger into map files                                     |

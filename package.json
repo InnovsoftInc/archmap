@@ -11,6 +11,7 @@
     "src",
     "viewer",
     "templates",
+    "skills",
     "!src/__tests__"
   ],
   "packageManager": "pnpm@10.30.3",

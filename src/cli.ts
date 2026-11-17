@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
 import { runAgent } from "./agent.ts";
 import { doctor } from "./doctor.ts";
+import { installSkill } from "./skill.ts";
 import {
   available,
   latestRelease,
@@ -55,6 +56,8 @@ Usage: archmap <command> [options]
   build [--out archmap-site] [--public] [--offline]
                                  Write the map as a static site
   migrate                        Turn an old saves ledger into map files
+  skill                          Install the /archmap skill for Claude Code in
+                                 your own skills folder, for use in every repo
   upgrade                        Move the map to the latest archmap release: sets
                                  the pinned version and refreshes what init wrote
   doctor                         Say what would make archmap fail in this project
@@ -135,6 +138,8 @@ const main = async (argv: string[]): Promise<void> => {
         }),
       );
     }
+    case "skill":
+      return print(installSkill());
     case "scan": {
       const leads = leadsOf(scan(projectRoot()));
       if (values.json) console.log(JSON.stringify(leads, null, 2));
