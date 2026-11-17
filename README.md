@@ -10,10 +10,10 @@ archmap lives in this repo. Projects don't install it: they run it with `npx -y 
 
 ## Quick start
 
-Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.4.0`:
+Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.4.1`:
 
 ```bash
-npx -y github:InnovsoftInc/archmap#v0.4.0 init
+npx -y github:InnovsoftInc/archmap#v0.4.1 init
 ```
 
 `init` creates `architecture/` with `archmap.config.json` (pinned to this version) and a starter `README.md`, and adds an archmap section to `AGENTS.md` (plus `@AGENTS.md` in an existing `CLAUDE.md`). Add `--ci github` or `--ci azure` to write the PR workflow too.
@@ -21,7 +21,7 @@ npx -y github:InnovsoftInc/archmap#v0.4.0 init
 Then ask your agent to run `brief` and follow it:
 
 ```bash
-npx -y github:InnovsoftInc/archmap#v0.4.0 brief
+npx -y github:InnovsoftInc/archmap#v0.4.1 brief
 ```
 
 On an empty map the brief is the setup task: discover everything in the code, write the map files, then run `check` until it passes. Nothing is installed or vendored. Projects run archmap through `npx` at the version pinned in `archmap.config.json`, and commit only `architecture/`. To upgrade, change the pinned version.
@@ -57,7 +57,7 @@ A file whose default lane isn't in the list goes to the first lane on the same s
 
 ## Commands
 
-Run them as `npx -y github:InnovsoftInc/archmap#v0.4.0 <command>`, written `archmap` below.
+Run them as `npx -y github:InnovsoftInc/archmap#v0.4.1 <command>`, written `archmap` below.
 
 | Command                                                                | What it does                                                                    |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
