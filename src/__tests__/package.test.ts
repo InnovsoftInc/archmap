@@ -20,7 +20,7 @@ describe("the package", () => {
     expect(pkg).not.toHaveProperty("private");
     expect(pkg).not.toHaveProperty("publishConfig");
     expect(pkg.bin.archmap).toBe("./bin/archmap.mjs");
-    expect(pkg.version).toBe("0.4.3");
+    expect(pkg.version).toBe("0.4.4");
     expect(pkg.repository.url).toBe(`https://github.com/${HOME_REPO}`);
     for (const shipped of ["bin", "src", "viewer", "templates"])
       expect(pkg.files).toContain(shipped);
