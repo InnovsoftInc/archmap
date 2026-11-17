@@ -1,4 +1,4 @@
-// `init`: set a project up for a markdown map: config, README, the AGENTS.md block and, on request, the PR workflow.
+// `init`: set a project up for a markdown map: config, README, the start script, the AGENTS.md and README.md blocks and, on request, the PR workflow.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -61,6 +61,67 @@ const packageName = (root: string): string | undefined => {
   } catch {
     return undefined;
   }
+};
+
+// How the project's package manager runs a package.json script.
+const runScript = (root: string, pkg: Record<string, unknown>): string => {
+  const pm = typeof pkg.packageManager === "string" ? pkg.packageManager : "";
+  const has = (file: string) => existsSync(join(root, file));
+  if (pm.startsWith("pnpm@") || has("pnpm-lock.yaml")) return "pnpm";
+  if (pm.startsWith("yarn@") || has("yarn.lock")) return "yarn";
+  if (pm.startsWith("bun@") || has("bun.lock") || has("bun.lockb"))
+    return "bun run";
+  return "npm run";
+};
+
+/**
+ * Adds an `archmap` script that starts the viewer to the root package.json, so
+ * people and agents start the map the way they start everything else. A script
+ * of that name that doesn't run archmap is someone's own and is kept. Returns
+ * the command that starts the viewer, and a line saying what was done.
+ */
+const addStartScript = (
+  root: string,
+  cli: string,
+): { start: string; line?: string } => {
+  const dev = `${cli} dev`;
+  const file = join(root, "package.json");
+  if (!existsSync(file)) return { start: dev };
+  const text = readFileSync(file, "utf8");
+  let pkg: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("not an object");
+    pkg = parsed as Record<string, unknown>;
+  } catch {
+    return {
+      start: dev,
+      line: "package.json isn't valid JSON, so no archmap script was added.",
+    };
+  }
+  const scripts =
+    pkg.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {};
+  const current: unknown = Reflect.get(scripts, "archmap");
+  const start = `${runScript(root, pkg)} archmap`;
+  if (current === dev)
+    return { start, line: "Kept the archmap script in package.json." };
+  if (typeof current === "string" && !current.includes("archmap"))
+    return {
+      start: dev,
+      line: "Kept your own archmap script in package.json.",
+    };
+  pkg.scripts = { ...scripts, archmap: dev };
+  // Keep the file's own indentation and final newline.
+  const indent = /^([ \t]+)\S/m.exec(text)?.[1] ?? "  ";
+  writeFileSync(
+    file,
+    `${JSON.stringify(pkg, null, indent)}${text.endsWith("\n") ? "\n" : ""}`,
+  );
+  return {
+    start,
+    line: `${current === undefined ? "Added" : "Updated"} the archmap script in package.json (\`${start}\` opens the map).`,
+  };
 };
 
 // Formatting a formatter may apply (blank lines, indentation, spacing) doesn't
@@ -182,9 +243,13 @@ export const init = (
   if (appendLineOnce(join(mapDir, ".gitignore"), ".no-change"))
     lines.push(`Added .no-change to ${rel}/.gitignore.`);
 
+  const started = addStartScript(root, cli);
+  if (started.line) lines.push(started.line);
+
   const agents = join(root, "AGENTS.md");
   if (!existsSync(agents)) writeFileSync(agents, "# Agent notes\n");
   const section = template("agents-section.md")
+    .replaceAll("__START__", started.start)
     .replaceAll("__CLI__", cli)
     .replaceAll("__DIR__", rel)
     .replaceAll("__BASE__", config.base ?? "main")
@@ -196,6 +261,30 @@ export const init = (
   else {
     writeFileSync(agents, updated);
     lines.push("Updated the archmap section of AGENTS.md.");
+  }
+
+  // The project's own README says how to view and use the map. Not when the
+  // map folder is the project root: that README is the map's start page.
+  if (rel !== ".") {
+    const projectReadme = join(root, "README.md");
+    const had = existsSync(projectReadme);
+    const before = had ? readFileSync(projectReadme, "utf8") : "";
+    const about = template("readme-section.md")
+      .replaceAll("__START__", started.start)
+      .replaceAll("__CLI__", cli)
+      .replaceAll("__DIR__", rel.split("\\").join("/"))
+      .trimEnd();
+    const after = withBlock(before, `${START}\n${about}\n${END}`);
+    if (after === before)
+      lines.push("Kept the archmap section of README.md.");
+    else {
+      writeFileSync(projectReadme, after);
+      lines.push(
+        had
+          ? "Updated the archmap section of README.md."
+          : "Wrote README.md with how to view the map.",
+      );
+    }
   }
 
   const claude = join(root, "CLAUDE.md");
@@ -232,6 +321,7 @@ export const init = (
     // from the config, so running init again keeps it in step with cli and base.
     const skill = join(".claude", "skills", "archmap", "SKILL.md");
     const text = template("claude-skill.md")
+      .replaceAll("__START__", started.start)
       .replaceAll("__CLI__", cli)
       .replaceAll("__DIR__", rel)
       .replaceAll("__BASE__", config.base ?? "main");
@@ -244,6 +334,8 @@ export const init = (
     }
   }
 
-  lines.push(`Next: ask your agent to run \`${cli} brief\` and follow it.`);
+  lines.push(
+    `Next: ask your agent to run \`${cli} brief\` and follow it. To see the map, run \`${started.start}\`.`,
+  );
   return { ok: true, lines };
 };

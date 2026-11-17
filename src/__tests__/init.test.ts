@@ -51,7 +51,7 @@ describe("init", () => {
     expect(agents).toContain(`${CLI} brief --base main`);
     expect(agents).not.toContain("__CLI__");
     expect(r.lines.at(-1)).toBe(
-      `Next: ask your agent to run \`${CLI} brief\` and follow it.`,
+      `Next: ask your agent to run \`${CLI} brief\` and follow it. To see the map, run \`npm run archmap\`.`,
     );
   });
 
@@ -60,6 +60,77 @@ describe("init", () => {
     expect(JSON.parse(read("architecture", "archmap.config.json")).name).toBe(
       "Given",
     );
+  });
+
+  it("adds an archmap script that starts the viewer, and tells agents how to run it", () => {
+    writeFileSync(
+      join(root, "package.json"),
+      '{\n\t"name": "shop",\n\t"scripts": { "test": "vitest" }\n}\n',
+    );
+    writeFileSync(join(root, "pnpm-lock.yaml"), "");
+    const r = init(root, { claude: true });
+    const text = read("package.json");
+    expect(JSON.parse(text).scripts).toEqual({
+      test: "vitest",
+      archmap: `${CLI} dev`,
+    });
+    // The file keeps its tabs and its final newline.
+    expect(text).toContain('\n\t"name": "shop"');
+    expect(text.endsWith("}\n")).toBe(true);
+    expect(r.lines).toContain(
+      "Added the archmap script in package.json (`pnpm archmap` opens the map).",
+    );
+    expect(read("AGENTS.md")).toContain("run `pnpm archmap` in the background");
+    expect(read(".claude", "skills", "archmap", "SKILL.md")).toContain(
+      "run `pnpm archmap` in the background",
+    );
+    // A second run changes nothing; a new cli updates the script.
+    expect(init(root, {}).lines).toContain(
+      "Kept the archmap script in package.json.",
+    );
+    expect(read("package.json")).toBe(text);
+    init(root, { cli: "node tools/archmap.mjs" });
+    expect(JSON.parse(read("package.json")).scripts.archmap).toBe(
+      "node tools/archmap.mjs dev",
+    );
+  });
+
+  it("writes how to view and use the map into the project's README, once", () => {
+    writeFileSync(join(root, "package.json"), '{"name":"shop"}');
+    writeFileSync(join(root, "README.md"), "# Shop\n\nSells things.\n");
+    expect(init(root, {}).lines).toContain(
+      "Updated the archmap section of README.md.",
+    );
+    const text = read("README.md");
+    expect(text.startsWith("# Shop\n\nSells things.\n\n<!-- archmap:start -->")).toBe(true);
+    expect(text).toContain("[`architecture/`](architecture/README.md)");
+    expect(text).toContain("run `npm run archmap` and open http://127.0.0.1:4321/");
+    expect(text).toContain(`run \`${CLI} check\``);
+    expect(text).not.toMatch(/__[A-Z]+__/);
+    expect(init(root, {}).lines).toContain(
+      "Kept the archmap section of README.md.",
+    );
+    expect(read("README.md")).toBe(text);
+    // Without a README the project gets one; a map at the root keeps its own.
+    rmSync(join(root, "README.md"));
+    expect(init(root, {}).lines).toContain(
+      "Wrote README.md with how to view the map.",
+    );
+  });
+
+  it("keeps a script of that name that isn't archmap's, and works without a package.json", () => {
+    const own = '{"scripts":{"archmap":"node docs/draw.js"}}';
+    writeFileSync(join(root, "package.json"), own);
+    expect(init(root, {}).lines).toContain(
+      "Kept your own archmap script in package.json.",
+    );
+    expect(read("package.json")).toBe(own);
+    expect(read("AGENTS.md")).toContain(`run \`${CLI} dev\` in the background`);
+    rmSync(join(root, "package.json"));
+    const r = init(root, {});
+    expect(r.ok).toBe(true);
+    expect(existsSync(join(root, "package.json"))).toBe(false);
+    expect(r.lines.at(-1)).toContain(`To see the map, run \`${CLI} dev\`.`);
   });
 
   it("is idempotent: a second run keeps the config and replaces, not duplicates, the AGENTS block", () => {
