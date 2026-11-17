@@ -45,7 +45,10 @@ role`, `API key`); `params` are what goes in the path, query or headers, each
 `header`; `body` is the request body's fields, each `{ name, type, required,
 desc }` (write a nested field as `address.city`); `returns` is what comes back,
 and the errors worth knowing. Read them from the handler and its validation,
-never guess: leave out what the code doesn't show. A job's `does` and an `env`
+never guess: leave out what the code doesn't show. An endpoint added to an
+existing map must have `does` and a `params` entry for each name in its path
+(`:id`, `{id}`), or the pull request check fails; endpoints already on the map
+without them are listed as a warning. A job's `does` and an `env`
 entry's `why` say the same for those: what the job does each run, and what the
 variable controls and what breaks without it.
 

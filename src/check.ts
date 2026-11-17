@@ -2,7 +2,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  mapAt,
+  newEndpointProblems,
+  staleEntries,
+  undocumented,
+} from "./drift.ts";
 import { gateProblems } from "./gate.ts";
+import { forkPoint, resolveBase } from "./git.ts";
 import { loadMap } from "./map/load.ts";
 import { schemaProblems } from "./map/schema.ts";
 import { laneProblems } from "./map/lanes.ts";
@@ -46,12 +53,22 @@ const secretProblems = (map: LoadedMap): Finding[] => {
   );
 };
 
+const mapBefore = (root: string, dir: string, base: string): Doc[] => {
+  try {
+    return mapAt(root, dir, forkPoint(root, resolveBase(root, base)));
+  } catch {
+    return [];
+  }
+};
+
 export const runCheck = (
   root: string,
   dir: string,
   opts: { base?: string } = {},
 ): CheckResult => {
   const map = loadMap(dir);
+  // The map as this branch found it, to tell new entries from old ones.
+  const before = opts.base ? mapBefore(root, dir, opts.base) : [];
   const errors: Finding[] = [
     ...map.fileErrors,
     ...schemaProblems(map.docs, map.failedIds),
@@ -59,6 +76,7 @@ export const runCheck = (
     ...secretProblems(map),
     ...laneProblems(map.config, map.docs),
     ...(opts.base ? gateProblems(root, dir, opts.base) : []),
+    ...newEndpointProblems(map.docs, before),
   ];
   if (!map.docs.length && existsSync(join(dir, "saves")))
     errors.push({
@@ -77,6 +95,8 @@ export const runCheck = (
       message: `${LEAD_WARNING}${l.text}`,
     })),
     ...plannedWithEvidence(root, map.docs),
+    ...(opts.base ? staleEntries(root, dir, opts.base, map.docs, before) : []),
+    ...undocumented(map.docs),
   ];
   return { errors, warnings, leads, map };
 };

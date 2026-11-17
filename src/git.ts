@@ -153,6 +153,39 @@ export const changedFiles = (root: string, name: string): string[] => {
   }
 };
 
+/** Where this branch left `base`: their merge base, or `base` itself when there is none. */
+export const forkPoint = (root: string, base: string): string => {
+  try {
+    return git(root, ["merge-base", base, "HEAD"]).trim() || base;
+  } catch {
+    return base;
+  }
+};
+
+/**
+ * The lines of `file` this branch touched since `ref`, with the whole of each
+ * function a change falls in (`-W`), so a name that appears here is in code
+ * that changed. A file that is new since `ref` comes back whole; "" when the
+ * file didn't change.
+ */
+export const changedText = (root: string, ref: string, file: string): string => {
+  try {
+    const diff = git(root, ["diff", "-W", "--no-color", ref, "--", file]);
+    // Only the code: a hunk's `@@` line names the function before it, which
+    // is not one that changed.
+    if (diff)
+      return diff
+        .split("\n")
+        .filter((l) => !/^(@@|diff |index |--- |\+\+\+ )/.test(l))
+        .join("\n");
+    if (fileAt(root, ref, file) !== null) return "";
+    const abs = join(root, file);
+    return existsSync(abs) ? readFileSync(abs, "utf8") : "";
+  } catch {
+    return "";
+  }
+};
+
 /** Files that differ from HEAD (staged or not) or are untracked, relative to `root`. */
 export const uncommittedFiles = (root: string): string[] => [
   ...new Set([
