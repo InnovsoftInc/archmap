@@ -1,13 +1,20 @@
 // `archmap brief`: the task prompt any AI agent follows to create or update the map.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LEAD_WARNING, runCheck } from "./check.ts";
-import { changedFiles, defaultBase } from "./git.ts";
+import {
+  branchNames,
+  changedFiles,
+  currentBranch,
+  defaultBase,
+  prHost,
+} from "./git.ts";
 import { PACKAGE_ROOT } from "./home.ts";
 import { evidenceOf } from "./map/evidence.ts";
-import type { Doc } from "./map/types.ts";
+import type { Doc, MapConfig } from "./map/types.ts";
 import { troubleLines, troubles } from "./doctor.ts";
+import { defaultName } from "./init.ts";
 import { cliCommand } from "./version.ts";
 import { strings } from "./util.ts";
 
@@ -40,6 +47,48 @@ const template = (name: string): string =>
     join(PACKAGE_ROOT, "templates", "brief", `${name}.md`),
     "utf8",
   ).trim();
+
+const MAX_BRANCHES = 12;
+
+/**
+ * What to ask the person before the first map is written, with what the repo
+ * already shows: its branches, the one checked out, and where its pull
+ * requests live.
+ */
+const setupQuestions = (
+  root: string,
+  config: MapConfig,
+  cli: string,
+  // False before `init` has run: the config's name is then only a placeholder.
+  named: boolean,
+): string => {
+  const base = config.base ?? defaultBase(root);
+  const here = currentBranch(root);
+  const names = branchNames(root);
+  const host = prHost(root);
+  const listed = names.slice(0, MAX_BRANCHES).map((n) => `\`${n}\``);
+  const more = names.length - listed.length;
+  return template("setup-ask")
+    .replaceAll("__CLI__", cli)
+    .replaceAll("__BASE__", base)
+    .replaceAll(
+      "__BASE_NOTE__",
+      here && here !== base ? ` (\`${here}\` is checked out now)` : "",
+    )
+    .replaceAll(
+      "__BRANCHES__",
+      listed.length
+        ? `Branches here: ${listed.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`
+        : "No branches found: this isn't a git repository yet, so skip the branch and pull request steps.",
+    )
+    .replaceAll(
+      "__CI__",
+      host
+        ? `${host === "github" ? "GitHub Actions" : "Azure Pipelines"}, since this repository is hosted there`
+        : "no check, since this repository's host isn't GitHub or Azure DevOps",
+    )
+    .replaceAll("__NAME__", named ? config.name : defaultName(root));
+};
 
 const covers = (doc: Doc, file: string): boolean =>
   strings(doc.data.code).some((code) => {
@@ -84,6 +133,21 @@ export const brief = (
   const out: string[] = [
     `# archmap brief: ${task}`,
     "",
+    // A first map starts with the person's choices. Not when archmap runs the
+    // agent itself: nobody is there to answer.
+    ...(task === "setup" && !check.map.docs.length && !opts.forAgent
+      ? [
+          "## First, ask the person",
+          "",
+          setupQuestions(
+            root,
+            check.map.config,
+            cli,
+            existsSync(join(dir, "archmap.config.json")),
+          ),
+          "",
+        ]
+      : []),
     "## Your task",
     "",
     template(task),

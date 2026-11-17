@@ -11,7 +11,7 @@ The map lives in `__DIR__/` as markdown files that you write and `archmap` check
    - After changing code on this branch: `__CLI__ brief --base __BASE__`
    - When asked to set up the map, or `__DIR__/` has no map files yet: `__CLI__ brief --task setup`
    - When asked to review the map: `__CLI__ brief --task review`
-2. Follow the brief. Every fact you write needs `evidence` you checked in the code.
+2. Follow the brief. A setup brief for a new map starts with questions for the person (which branch the map describes, whether pull requests are checked, whether an agent updates the map on each one): ask them before anything else, and use their answers. Every fact you write needs `evidence` you checked in the code.
 3. Run `__CLI__ check` and fix every error until it passes. Warnings list leads to confirm: add them to the map with evidence, or to `ignore` in `__DIR__/archmap.config.json` if they don't belong.
 4. Run `__CLI__ check --base __BASE__`. If it still fails because nothing on the map needs to change, say so and suggest adding `Archmap: none - <reason>` to the commit message.
 

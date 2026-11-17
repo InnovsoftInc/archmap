@@ -127,6 +127,10 @@ const addStartScript = (
   };
 };
 
+/** What a new map is called when nobody says: the package's name, else the folder's. */
+export const defaultName = (root: string): string =>
+  packageName(root) ?? (basename(resolve(root)) || "Architecture");
+
 // Formatting a formatter may apply (blank lines, indentation, spacing) doesn't
 // count as a difference.
 const normalized = (text: string): string =>
@@ -213,11 +217,7 @@ export const init = (
       lines.push(`Set ${changed.join(" and ")} in ${rel}/archmap.config.json.`);
     } else lines.push(`Kept the existing ${rel}/archmap.config.json.`);
   } else {
-    const name =
-      opts.name ??
-      packageName(root) ??
-      basename(resolve(root)) ??
-      "Architecture";
+    const name = opts.name ?? defaultName(root);
     const json = (v: string) => JSON.stringify(v).slice(1, -1);
     // The default agent may run check and brief without asking, so it works
     // in CI; `archmap agent` fills `{cli}` in when it runs.
@@ -338,7 +338,7 @@ export const init = (
   }
 
   lines.push(
-    `Next: ask your agent to run \`${cli} brief\` and follow it. To see the map, run \`${started.start}\`.`,
+    `Next: ask your agent to run \`${cli} brief\` and follow it; on a new map it asks you which branch to describe and how to keep it current. To see the map, run \`${started.start}\`.`,
   );
   return { ok: true, lines };
 };

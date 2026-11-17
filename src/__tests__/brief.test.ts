@@ -187,6 +187,46 @@ describe("brief", () => {
     expect(forAgent).not.toContain("Archmap: none");
   });
 
+  it("starts a first setup with questions for the person, filled in from the repository", () => {
+    write("src/a.ts", "a\n");
+    initRepo();
+    git("branch", "develop");
+    git("switch", "-q", "-c", "feature/x");
+    git("remote", "add", "origin", "git@github.com:acme/shop.git");
+    const out = brief(root, dir(), { task: "setup" });
+    const ask = out.split("## First, ask the person")[1]?.split("\n## ")[0];
+    expect(ask).toBeDefined();
+    expect(out.indexOf("## First, ask the person")).toBeLessThan(
+      out.indexOf("## Your task"),
+    );
+    expect(ask).toContain("Default: `main` (`feature/x` is checked out now).");
+    expect(ask).toMatch(/Branches here: .*`develop`/);
+    expect(ask).toContain(
+      "Default: GitHub Actions, since this repository is hosted there.",
+    );
+    // Before init has run, the name offered is the project's, not a placeholder.
+    expect(ask).not.toContain("Default: `Architecture`");
+    expect(ask).toContain("git switch -c archmap/setup origin/<branch>");
+    expect(ask).toContain('init --base <branch> --name "<name>"');
+    expect(ask).toContain("Never push or open one without a yes.");
+    expect(ask).not.toMatch(/__[A-Z_]+__/);
+  });
+
+  it("asks nothing when archmap runs the agent itself, when a map exists, or for another task", () => {
+    expect(brief(root, dir(), { task: "setup", forAgent: true })).not.toContain(
+      "## First, ask the person",
+    );
+    // Outside a repository there are no branches to offer.
+    expect(brief(root, dir(), { task: "setup" })).toContain(
+      "this isn't a git repository yet",
+    );
+    api();
+    for (const task of ["setup", "review"] as const)
+      expect(brief(root, dir(), { task })).not.toContain(
+        "## First, ask the person",
+      );
+  });
+
   it("lists leads only under Leads from scan, not in the check results", () => {
     write(
       "apps/api/src/routes.ts",

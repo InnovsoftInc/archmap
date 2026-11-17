@@ -51,7 +51,7 @@ describe("init", () => {
     expect(agents).toContain(`${CLI} brief --base main`);
     expect(agents).not.toContain("__CLI__");
     expect(r.lines.at(-1)).toBe(
-      `Next: ask your agent to run \`${CLI} brief\` and follow it. To see the map, run \`npm run archmap\`.`,
+      `Next: ask your agent to run \`${CLI} brief\` and follow it; on a new map it asks you which branch to describe and how to keep it current. To see the map, run \`npm run archmap\`.`,
     );
   });
 

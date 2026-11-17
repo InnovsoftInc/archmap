@@ -75,6 +75,47 @@ export const defaultBase = (root: string): string => {
   }
 };
 
+/** The branch checked out, or null on a detached HEAD or outside a repository. */
+export const currentBranch = (root: string): string | null => {
+  try {
+    return git(root, ["branch", "--show-current"]).trim() || null;
+  } catch {
+    return null;
+  }
+};
+
+/** Local and origin branch names, most recently committed first, each once. */
+export const branchNames = (root: string): string[] => {
+  try {
+    const refs = git(root, [
+      "for-each-ref",
+      "--sort=-committerdate",
+      "--format=%(refname)",
+      "refs/heads",
+      "refs/remotes/origin",
+    ]);
+    const names = refs
+      .split("\n")
+      .map((r) => r.replace(/^refs\/(heads|remotes\/origin)\//, ""))
+      .filter((n) => n && n !== "HEAD");
+    return [...new Set(names)];
+  } catch {
+    return [];
+  }
+};
+
+/** Where pull requests are hosted, from origin's URL; null when it is neither or there is no origin. */
+export const prHost = (root: string): "github" | "azure" | null => {
+  try {
+    const url = git(root, ["remote", "get-url", "origin"]).trim();
+    if (/github\.com[:/]/.test(url)) return "github";
+    if (/dev\.azure\.com|visualstudio\.com/.test(url)) return "azure";
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 /** Files changed since `base`: committed (base...HEAD), staged, unstaged and untracked, relative to `root`. */
 export const changedFiles = (root: string, name: string): string[] => {
   const fail = (detail: string, cause?: unknown): never => {
