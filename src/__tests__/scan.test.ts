@@ -15,6 +15,7 @@ import { routesReader } from "../scan/routes.ts";
 import { schemaReader } from "../scan/schema.ts";
 import { infraReader } from "../scan/infra.ts";
 import { outsideReader } from "../scan/outside.ts";
+import { envReader } from "../scan/env.ts";
 import { ciReader } from "../scan/ci.ts";
 
 const fixture = (name: string) =>
@@ -466,6 +467,99 @@ describe("outside", () => {
   });
 });
 
+describe("env", () => {
+  const env = () => envReader(tmp, walk(tmp)).env ?? [];
+
+  it("reads the variables JavaScript and TypeScript code reads", () => {
+    write(
+      "apps/api/src/config.ts",
+      [
+        "const a = process.env.DATABASE_URL;",
+        'const b = process.env["STRIPE_KEY"];',
+        "const { REDIS_URL, PORT: port } = process.env;",
+        'const c = Deno.env.get("DENO_TOKEN");',
+        "if (process.env.NODE_ENV === 'production') {}",
+      ].join("\n"),
+    );
+    write(
+      "apps/web/src/api.ts",
+      [
+        "export const base = import.meta.env.VITE_API_URL;",
+        "export const dev = import.meta.env.DEV;",
+        "export const key = process.env.NEXT_PUBLIC_MAPS_KEY;",
+      ].join("\n"),
+    );
+    expect(env()).toEqual([
+      { file: "apps/api/src/config.ts", name: "DATABASE_URL", public: false },
+      { file: "apps/api/src/config.ts", name: "DENO_TOKEN", public: false },
+      { file: "apps/api/src/config.ts", name: "PORT", public: false },
+      { file: "apps/api/src/config.ts", name: "REDIS_URL", public: false },
+      { file: "apps/api/src/config.ts", name: "STRIPE_KEY", public: false },
+      {
+        file: "apps/web/src/api.ts",
+        name: "NEXT_PUBLIC_MAPS_KEY",
+        public: true,
+      },
+      { file: "apps/web/src/api.ts", name: "VITE_API_URL", public: true },
+    ]);
+  });
+
+  it("reads the keys of a schema that parses the whole environment", () => {
+    write(
+      "src/env.ts",
+      [
+        "const schema = z.object({",
+        "  OPENAI_API_KEY: z.string().optional(),",
+        '  EMAIL_PROVIDER: z.enum(["log", "resend"]),',
+        "  nested: { NOT_A_LINE_KEY: 1 },",
+        "});",
+        "export const env = schema.parse(process.env);",
+      ].join("\n"),
+    );
+    // Without the whole environment in the file, upper-case keys are just keys.
+    write("src/codes.ts", "export const codes = {\n  NOT_FOUND: 404,\n};\n");
+    expect(env().map((e) => e.name)).toEqual([
+      "EMAIL_PROVIDER",
+      "OPENAI_API_KEY",
+    ]);
+  });
+
+  it("reads other languages, each by its own call", () => {
+    write(
+      "a.py",
+      'x = os.environ["PY_A"]\ny = os.environ.get("PY_B")\nz = os.getenv("PY_C")\n',
+    );
+    write("b.go", 'x := os.Getenv("GO_A")\ny, ok := os.LookupEnv("GO_B")\n');
+    write("c.rb", "x = ENV['RB_A']\ny = ENV.fetch(\"RB_B\")\n");
+    write("d.rs", 'let x = env::var("RS_A");\n');
+    write("e.java", 'String x = System.getenv("JAVA_A");\n');
+    write("f.cs", 'var x = Environment.GetEnvironmentVariable("CS_A");\n');
+    write("g.php", "$x = getenv('PHP_A');\n$y = $_ENV['PHP_B'];\n");
+    expect(env().map((e) => e.name)).toEqual([
+      "PY_A",
+      "PY_B",
+      "PY_C",
+      "GO_A",
+      "GO_B",
+      "RB_A",
+      "RB_B",
+      "RS_A",
+      "JAVA_A",
+      "CS_A",
+      "PHP_A",
+      "PHP_B",
+    ]);
+  });
+
+  it("leaves out tests and names each variable once per file", () => {
+    write("src/a.ts", "process.env.API_KEY; process.env.API_KEY;");
+    write("src/a.test.ts", "process.env.TEST_ONLY;");
+    expect(env()).toEqual([
+      { file: "src/a.ts", name: "API_KEY", public: false },
+    ]);
+  });
+});
+
 describe("ci", () => {
   it("reads workflows and what they deploy with", () => {
     expect(ciReader(fastify, walk(fastify)).ci).toEqual([
@@ -514,6 +608,7 @@ describe("scan", () => {
       schemaFiles: [],
       infra: [],
       outside: [],
+      env: [],
       ci: [],
       unreadable: [],
       codeFiles: 0,

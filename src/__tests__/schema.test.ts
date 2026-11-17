@@ -167,6 +167,60 @@ describe("schemaProblems", () => {
     );
   });
 
+  it("checks an endpoint's documentation: does, auth, params, body and returns", () => {
+    const ok = service("api", {
+      endpoints: [
+        {
+          route: "POST /a/:id",
+          does: "Renames a thing.",
+          auth: "signed-in staff",
+          params: [{ name: "id", in: "path", type: "uuid", required: true }],
+          body: [{ name: "name", type: "string", desc: "the new name" }],
+          returns: "the thing",
+          evidence: "a.ts",
+        },
+      ],
+      jobs: [{ name: "nightly", does: "Cleans up.", evidence: "j.ts" }],
+    });
+    expect(messages([ok])).toEqual([]);
+    const bad = service("api", {
+      endpoints: [
+        {
+          route: "GET /a",
+          params: [{ in: "cookie", required: "yes" }],
+          body: [{ type: "string", example: "x" }],
+          evidence: "a.ts",
+        },
+      ],
+    });
+    expect(messages([bad])).toEqual(
+      expect.arrayContaining([
+        "endpoints[0].params[0].name must be a non-empty string",
+        'endpoints[0].params[0].in "cookie" must be one of path, query, header',
+        "endpoints[0].params[0].required must be a boolean",
+        'endpoints[0].body[0] has unknown key "example"',
+        "endpoints[0].body[0].name must be a non-empty string",
+      ]),
+    );
+  });
+
+  it("checks env entries: a name, an optional why, and public as a boolean", () => {
+    const ok = service("api", {
+      env: [{ name: "API_KEY", why: "calls the partner API", public: false }],
+    });
+    expect(messages([ok])).toEqual([]);
+    const bad = service("api", {
+      env: [{ why: "x", public: "yes", value: "hunter2" }],
+    });
+    expect(messages([bad])).toEqual(
+      expect.arrayContaining([
+        'env[0] has unknown key "value"',
+        "env[0].name must be a non-empty string",
+        "env[0].public must be a boolean",
+      ]),
+    );
+  });
+
   it("checks store kind, tables, columns and enums", () => {
     const d = store("db", {
       kind: "sql",

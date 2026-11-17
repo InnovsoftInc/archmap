@@ -35,6 +35,14 @@ const kind = (...values: string[]): Spec => ({
   required: true,
 });
 
+// One thing an endpoint takes: a parameter or a body field.
+const field: Shape = {
+  name: req,
+  type: opt,
+  required: { t: "bool" },
+  desc: opt,
+};
+
 const COMMON: Shape = {
   name: req,
   status: { t: "enum", values: STATUSES, required: true },
@@ -47,11 +55,39 @@ const SHAPES: Record<Folder, Shape> = {
     kind: kind("app", "api", "worker", "job"),
     lane: opt,
     connects,
-    endpoints: { t: "list", item: { route: { t: "route" }, evidence: opt } },
-    jobs: { t: "list", item: { name: req, schedule: opt, evidence: opt } },
+    // An endpoint documents itself: what it does, who may call it, what to
+    // send (`params` in the path, query or headers; `body` fields) and what
+    // comes back.
+    endpoints: {
+      t: "list",
+      item: {
+        route: { t: "route" },
+        does: opt,
+        auth: opt,
+        params: {
+          t: "list",
+          item: {
+            ...field,
+            in: { t: "enum", values: ["path", "query", "header"] },
+          },
+        },
+        body: { t: "list", item: field },
+        returns: opt,
+        evidence: opt,
+      },
+    },
+    jobs: {
+      t: "list",
+      item: { name: req, does: opt, schedule: opt, evidence: opt },
+    },
     libraries: {
       t: "list",
       item: { name: req, package: opt, why: opt, evidence: opt },
+    },
+    // The environment variables the service reads: names only, never values.
+    env: {
+      t: "list",
+      item: { name: req, why: opt, public: { t: "bool" }, evidence: opt },
     },
   },
   stores: {

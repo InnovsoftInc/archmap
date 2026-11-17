@@ -70,9 +70,23 @@ describe("toViewModel", () => {
           name: "API",
           status: "live",
           kind: "api",
-          endpoints: [{ route: "GET /a" }],
+          endpoints: [
+            { route: "GET /a" },
+            {
+              route: "POST /a/:id",
+              does: "Renames a thing.",
+              auth: "signed-in staff",
+              params: [{ name: "id", in: "path", required: true }],
+              body: [{ name: "name", type: "string", desc: "the new name" }],
+              returns: "the thing",
+            },
+          ],
           jobs: [{ name: "nightly" }],
           libraries: [{ name: "zod" }],
+          env: [
+            { name: "VITE_API_URL", why: "where the API is", public: true },
+            { name: "API_KEY", evidence: "src/config.ts" },
+          ],
           connects: [{ to: "db", why: "reads", how: "SQL" }],
         },
         "Handles requests.\n",
@@ -97,6 +111,16 @@ describe("toViewModel", () => {
       type: "endpoint",
       name: "GET /a",
     });
+    expect(m.services["api.ep-1"]).toEqual({
+      parent: "api",
+      type: "endpoint",
+      name: "POST /a/:id",
+      purpose: "Renames a thing.",
+      auth: "signed-in staff",
+      params: [{ name: "id", in: "path", required: true }],
+      body: [{ name: "name", type: "string", desc: "the new name" }],
+      returns: "the thing",
+    });
     expect(m.services["api.job-0"]).toMatchObject({
       parent: "api",
       type: "job",
@@ -104,6 +128,19 @@ describe("toViewModel", () => {
     expect(m.services["api.lib-0"]).toMatchObject({
       parent: "api",
       type: "library",
+    });
+    expect(m.services["api.env-0"]).toEqual({
+      parent: "api",
+      type: "env",
+      name: "VITE_API_URL",
+      purpose: "where the API is",
+      public: true,
+    });
+    expect(m.services["api.env-1"]).toEqual({
+      parent: "api",
+      type: "env",
+      name: "API_KEY",
+      evidence: "src/config.ts",
     });
     expect(m.connections["api-db"]).toMatchObject({
       from: "api",

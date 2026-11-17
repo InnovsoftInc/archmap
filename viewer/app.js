@@ -97,6 +97,8 @@ function emptyModel() {
 }
 
 // ---------- UI state
+// The whole map on one page (the Diagram button): only at the top of "arch".
+var diag = false;
 var view = "arch",
   path = [],
   sel = null,
@@ -380,6 +382,7 @@ var TYPE_LABEL = {
   endpoint: "Endpoint",
   module: "Endpoint group",
   library: "Library",
+  env: "Environment variable",
   tool: "Tool",
   container: "Container",
 };
@@ -402,6 +405,7 @@ var ICON = {
     '<svg viewBox="0 0 16 16"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7"/></svg>',
   library:
     '<svg viewBox="0 0 16 16"><path d="M3 2.5h3v11H3zM7 2.5h3v11H7zM11 3l2.8.8-2.6 9.7-2.8-.8"/></svg>',
+  env: '<svg viewBox="0 0 16 16"><circle cx="5" cy="8" r="2.8"/><path d="M7.8 8h6.7M12 8v2.5M14.5 8v2"/></svg>',
   tool: '<svg viewBox="0 0 16 16"><path d="M10.5 2.5a3 3 0 0 0-2.9 3.8L2.8 11.1a1.4 1.4 0 0 0 2 2l4.8-4.8a3 3 0 0 0 3.8-2.9l-1.8 1-1.6-.6-.4-1.6z"/></svg>',
   container:
     '<svg viewBox="0 0 16 16"><path d="M2 5.5h12v8H2zM3.5 5.5V3h9v2.5"/></svg>',
@@ -450,41 +454,402 @@ function versionBadge(s) {
       : "")
   );
 }
-// Inside a service its parts are drawn in labelled groups.
-var PART_GROUPS = [
-  { type: "endpoint", name: "Endpoints" },
-  { type: "job", name: "Jobs" },
-  { type: "library", name: "Libraries" },
+// Inside a service its parts can be very long lists (every endpoint, library
+// and environment variable), so they are tables, not boxes: one tab per kind,
+// sorted by a click on a heading and filtered by the header search. A click on
+// a row opens that part's details in the drawer.
+function partName(x) {
+  return x.s.name || "";
+}
+function partPurpose(x) {
+  return x.s.purpose || "";
+}
+var WHERE = {
+  h: "Where in the code",
+  v: function (x) {
+    return x.s.evidence || "";
+  },
+  mono: true,
+  dev: true,
+};
+var FRESH_RANK = { ok: 1, patch: 2, minor: 3, major: 4 };
+var LISTS = [
+  {
+    type: "endpoint",
+    name: "Endpoints",
+    cols: [
+      {
+        h: "Method",
+        v: function (x) {
+          return partName(x).split(" ")[0];
+        },
+        mono: true,
+      },
+      {
+        h: "Path",
+        v: function (x) {
+          var n = partName(x),
+            i = n.indexOf(" ");
+          return i < 0 ? n : n.slice(i + 1);
+        },
+        mono: true,
+        open: true,
+      },
+      { h: "What it does", v: partPurpose },
+      WHERE,
+    ],
+  },
+  {
+    type: "job",
+    name: "Jobs",
+    cols: [
+      { h: "Job", v: partName, open: true },
+      { h: "What it does", v: partPurpose },
+      {
+        h: "Runs",
+        v: function (x) {
+          return x.s.schedule || "";
+        },
+      },
+      WHERE,
+    ],
+  },
+  {
+    type: "library",
+    name: "Libraries",
+    cols: [
+      { h: "Library", v: partName, open: true },
+      {
+        h: "Package",
+        v: function (x) {
+          return x.s.package || "";
+        },
+        mono: true,
+      },
+      {
+        h: "Version",
+        v: function (x) {
+          return x.s.version || "";
+        },
+        mono: true,
+      },
+      {
+        h: "Latest",
+        v: function (x) {
+          return x.s.latest || "";
+        },
+        mono: true,
+      },
+      {
+        h: "Up to date",
+        v: function (x) {
+          return (own(FRESH, x.s.fresh) && FRESH[x.s.fresh]) || "";
+        },
+        n: function (x) {
+          return (own(FRESH_RANK, x.s.fresh) && FRESH_RANK[x.s.fresh]) || 0;
+        },
+        html: function (x) {
+          var label = own(FRESH, x.s.fresh) && FRESH[x.s.fresh];
+          return label
+            ? '<span class="fresh f-' +
+                esc(x.s.fresh) +
+                '">' +
+                esc(label) +
+                "</span>"
+            : "";
+        },
+      },
+      { h: "What it is for", v: partPurpose },
+      WHERE,
+    ],
+  },
+  {
+    type: "env",
+    name: "Environment variables",
+    cols: [
+      { h: "Name", v: partName, mono: true, open: true },
+      {
+        h: "Shipped to the browser",
+        v: function (x) {
+          return x.s.public === true ? "Yes" : "";
+        },
+      },
+      { h: "What it is for", v: partPurpose },
+      WHERE,
+    ],
+  },
 ];
-function partGroups(items) {
-  var groups = PART_GROUPS.map(function (g) {
+var OTHER_LIST = {
+  type: "",
+  name: "Other parts",
+  cols: [
+    { h: "Name", v: partName, open: true },
+    {
+      h: "Kind",
+      v: function (x) {
+        return TYPE_LABEL[stype(x.s)];
+      },
+    },
+    { h: "What it is for", v: partPurpose },
+  ],
+};
+// Which service's lists are open, which tab, and the sort: `col` is an index
+// into the tab's columns (-1 keeps the map's own order). `focus` is a part to
+// show and mark once, after a search or a link led to it.
+var list = { svc: null, tab: null, col: -1, dir: 1, focus: null };
+function listGroups(id) {
+  var kids = childrenOf(id);
+  var groups = LISTS.map(function (l) {
     return {
-      name: g.name,
-      items: items.filter(function (x) {
-        return stype(x.s) === g.type;
+      l: l,
+      items: kids.filter(function (x) {
+        return stype(x.s) === l.type;
       }),
     };
   });
-  var rest = items.filter(function (x) {
-    return !PART_GROUPS.some(function (g) {
-      return g.type === stype(x.s);
-    });
+  groups.push({
+    l: OTHER_LIST,
+    items: kids.filter(function (x) {
+      return !LISTS.some(function (l) {
+        return l.type === stype(x.s);
+      });
+    }),
   });
-  groups.push({ name: "Other parts", items: rest });
   return groups.filter(function (g) {
     return g.items.length;
   });
 }
+function rowMatches(l, x) {
+  return (
+    !query ||
+    has(
+      l.cols
+        .map(function (c) {
+          return c.v(x);
+        })
+        .join(" "),
+    )
+  );
+}
+function renderLists() {
+  var box = $("lists"),
+    id = path[path.length - 1],
+    x = VM.S[id];
+  if (!x) return;
+  if (list.svc !== id)
+    list = { svc: id, tab: null, col: -1, dir: 1, focus: list.focus };
+  var groups = listGroups(id),
+    focus = list.focus;
+  list.focus = null;
+  if (focus)
+    groups.forEach(function (g) {
+      if (
+        g.l.name !== list.tab &&
+        g.items.some(function (i) {
+          return i.id === focus;
+        })
+      ) {
+        list.tab = g.l.name;
+        list.col = -1;
+      }
+    });
+  var cur =
+    groups.filter(function (g) {
+      return g.l.name === list.tab;
+    })[0] || groups[0];
+  var b =
+    '<div class="lhead"><h2 id="listsTitle">' +
+    esc(x.s.name) +
+    '</h2><div class="ltabs" role="group" aria-label="What to list">' +
+    groups
+      .map(function (g) {
+        return (
+          '<button type="button" class="tbtn" data-tab="' +
+          esc(g.l.name) +
+          '" aria-pressed="' +
+          String(g === cur) +
+          '">' +
+          esc(g.l.name) +
+          ' <span class="n"></span></button>'
+        );
+      })
+      .join("") +
+    "</div></div>";
+  if (!cur) {
+    box.innerHTML =
+      b +
+      '<div class="empty-state inline" role="status"><p>Nothing recorded inside yet. Ask your AI agent to run <code>archmap brief</code> and follow it.</p></div>';
+    return;
+  }
+  list.tab = cur.l.name;
+  // A column nothing fills (no schedule, or no code paths in a public build) is left out.
+  var cols = cur.l.cols
+    .map(function (c, i) {
+      return { c: c, i: i };
+    })
+    .filter(function (k) {
+      return cur.items.some(function (it) {
+        return k.c.v(it) !== "";
+      });
+    });
+  var by = cur.l.cols[list.col],
+    rows = cur.items.slice();
+  if (by)
+    rows.sort(function (p, q) {
+      return (
+        list.dir *
+        (by.n
+          ? by.n(p) - by.n(q)
+          : by.v(p).localeCompare(by.v(q), undefined, {
+              numeric: true,
+              sensitivity: "base",
+            }))
+      );
+    });
+  function cls(c) {
+    var names = (c.mono ? ["mono"] : []).concat(c.dev ? ["dev"] : []);
+    return names.length ? ' class="' + names.join(" ") + '"' : "";
+  }
+  box.innerHTML =
+    b +
+    '<div class="lwrap"><table class="ltable"><caption class="sr-only">' +
+    esc(cur.l.name + " of " + x.s.name) +
+    "</caption><thead><tr>" +
+    cols
+      .map(function (k) {
+        return (
+          '<th scope="col"' +
+          cls(k.c) +
+          ' aria-sort="' +
+          (k.i !== list.col
+            ? "none"
+            : list.dir > 0
+              ? "ascending"
+              : "descending") +
+          '"><button type="button" data-sort="' +
+          k.i +
+          '">' +
+          esc(k.c.h) +
+          '<i aria-hidden="true"></i></button></th>'
+        );
+      })
+      .join("") +
+    "</tr></thead><tbody>" +
+    rows
+      .map(function (it) {
+        return (
+          '<tr data-id="' +
+          esc(it.id) +
+          '">' +
+          cols
+            .map(function (k) {
+              return (
+                "<td" +
+                cls(k.c) +
+                ">" +
+                (k.c.html
+                  ? k.c.html(it)
+                  : k.c.open
+                    ? '<button type="button" class="rowbtn">' +
+                      esc(k.c.v(it)) +
+                      "</button>"
+                    : esc(k.c.v(it))) +
+                "</td>"
+              );
+            })
+            .join("") +
+          "</tr>"
+        );
+      })
+      .join("") +
+    '</tbody></table><p class="lnone" id="listsNone" role="status" hidden></p></div>';
+  filterLists();
+  if (focus)
+    box.querySelectorAll("tbody tr").forEach(function (tr) {
+      if (tr.dataset.id !== focus) return;
+      tr.hidden = false;
+      tr.scrollIntoView({ block: "center" });
+    });
+}
+// The header search narrows the open table and counts the matches on each tab.
+function filterLists() {
+  var box = $("lists");
+  if (box.hidden || !list.svc || !VM.S[list.svc]) return;
+  var shown = 0;
+  listGroups(list.svc).forEach(function (g) {
+    var hits = g.items.filter(function (it) {
+      return rowMatches(g.l, it);
+    }).length;
+    box.querySelectorAll("[data-tab]").forEach(function (t) {
+      if (t.dataset.tab === g.l.name)
+        t.querySelector(".n").textContent = query
+          ? hits + " of " + g.items.length
+          : g.items.length;
+    });
+    if (g.l.name !== list.tab) return;
+    shown = hits;
+    box.querySelectorAll("tbody tr").forEach(function (tr) {
+      var it = VM.S[tr.dataset.id],
+        on = !!sel && sel.view === "arch" && sel.key === "svc:" + tr.dataset.id;
+      tr.hidden = !it || !rowMatches(g.l, it);
+      // The row whose details are open in the drawer.
+      tr.classList.toggle("on", on);
+      if (on) tr.setAttribute("aria-current", "true");
+      else tr.removeAttribute("aria-current");
+    });
+  });
+  var none = $("listsNone");
+  if (!none) return;
+  none.hidden = shown > 0;
+  none.textContent = "Nothing here matches “" + query + "”.";
+}
+$("lists").onclick = function (ev) {
+  var tab = ev.target.closest("[data-tab]"),
+    sort = ev.target.closest("[data-sort]"),
+    again;
+  if (tab) {
+    if (list.tab === tab.dataset.tab) return;
+    list.tab = tab.dataset.tab;
+    list.col = -1;
+    list.dir = 1;
+    again = '[data-tab][aria-pressed="true"]';
+  } else if (sort) {
+    var i = Number(sort.dataset.sort);
+    // Ascending, then descending, then back to the map's own order.
+    if (list.col !== i) {
+      list.col = i;
+      list.dir = 1;
+    } else if (list.dir > 0) list.dir = -1;
+    else list.col = -1;
+    again = '[data-sort="' + i + '"]';
+  } else {
+    var row = ev.target.closest("tr[data-id]");
+    // Not when the click ends a text selection: the cells can be copied.
+    if (row && VM.S[row.dataset.id] && !String(getSelection()))
+      select("svc:" + row.dataset.id);
+    return;
+  }
+  renderLists();
+  var el = $("lists").querySelector(again);
+  if (el) el.focus();
+};
 function svcCard(x, opts) {
   var s = x.s,
     k = "svc:" + x.id,
     t = stype(s),
     el = document.createElement("div"),
-    stub = opts && opts.stub;
+    stub = opts && opts.stub,
+    compact = opts && opts.compact;
   var drillable =
-    !stub && (s.opens === "schema" || childrenOf(x.id).length > 0);
+    !stub && !compact && (s.opens === "schema" || childrenOf(x.id).length > 0);
   el.className =
-    "card svc t-" + t + (stub ? " stub" : "") + (x.st ? " " + x.st : "");
+    "card svc t-" +
+    t +
+    (stub ? " stub" : "") +
+    (compact ? " compact" : "") +
+    (compact && s.status === "planned" ? " is-planned" : "") +
+    (compact && s.status === "retiring" ? " is-retiring" : "") +
+    (x.st ? " " + x.st : "");
   el.dataset.key = k;
   if (stub) el.title = s.name + " · click to go to it";
   el.style.setProperty("--z", lvar(catOf(x.id)));
@@ -510,7 +875,7 @@ function svcCard(x, opts) {
     esc(s.name) +
     "</span></div>" +
     meta +
-    (stub
+    (stub || compact
       ? ""
       : '<div class="sbody"><span class="pur">' +
         esc(s.purpose || "") +
@@ -548,6 +913,7 @@ function addZone(keys, title, sub, color, opts) {
       return SIZE[k].h;
     },
     w: null,
+    pad: (opts && opts.pad) || 0,
   });
 }
 // Architecture is browsed by level: path [] = categories, [cat] = items in a category, [cat, item, ...] = parts of an item.
@@ -674,6 +1040,7 @@ function catCardH(n, purpose) {
 function layoutArch(vm) {
   var pos = dict();
   SIZE = dict();
+  if (diag && !path.length) return layoutDiagram(vm, pos);
   if (!path.length) {
     // Overview: actors on top, the platform boundary in the middle, outside systems below.
     var GX = CW + 110,
@@ -713,31 +1080,25 @@ function layoutArch(vm) {
     });
     return pos;
   }
+  // Inside a service nothing is drawn: its parts are tables (renderLists).
+  if (path.length > 1) return pos;
   var L = levelSets(),
     cols = Math.min(L.main.length > 9 ? 4 : 3, Math.max(1, L.main.length));
   var sorted = L.main.slice().sort(function (a, b) {
     return (a.s.order || 0) - (b.s.order || 0);
   });
-  // Inside a service each group of parts starts its own block of rows.
-  var blocks = path.length > 1 ? partGroups(sorted) : [{ items: sorted }];
   // Rows are as tall as their tallest card, so wrapped names never overlap.
   var rowY = PAD_T,
     rowH = 0;
-  blocks.forEach(function (b, bi) {
-    if (bi) {
-      rowY += rowH + ZGAP + PAD_T;
+  sorted.forEach(function (x, i) {
+    if (i && i % cols === 0) {
+      rowY += rowH + 60;
       rowH = 0;
     }
-    b.items.forEach(function (x, i) {
-      if (i && i % cols === 0) {
-        rowY += rowH + 60;
-        rowH = 0;
-      }
-      var h = hOf("svc:" + x.id, SH);
-      rowH = Math.max(rowH, h);
-      pos["svc:" + x.id] = { x: PAD + (i % cols) * (SW + 70), y: rowY };
-      SIZE["svc:" + x.id] = { w: SW, h: h };
-    });
+    var h = hOf("svc:" + x.id, SH);
+    rowH = Math.max(rowH, h);
+    pos["svc:" + x.id] = { x: PAD + (i % cols) * (SW + 70), y: rowY };
+    SIZE["svc:" + x.id] = { w: SW, h: h };
   });
   // Things in other categories sit below, compact, four to a row.
   var sy = rowY + rowH + ZGAP + PAD_T,
@@ -767,6 +1128,366 @@ function layoutArch(vm) {
     SIZE["act:" + a.id] = { w: AW, h: h };
   });
   return pos;
+}
+// ---------- diagram: every top-level service, store and outside system on one
+// page, grouped by lane, with the people on the left and each connection drawn.
+var DGAP = 170,
+  DROWS = 6;
+function diagramLanes(vm) {
+  return vm.cats
+    .map(function (c) {
+      return {
+        c: c,
+        items: (vm.rootByLane[c.id] || []).slice().sort(function (a, b) {
+          return (a.s.order || 0) - (b.s.order || 0);
+        }),
+      };
+    })
+    .filter(function (l) {
+      return l.items.length;
+    });
+}
+// The box a connection is drawn to: the top-level one that holds `id`.
+function diagramTop(id) {
+  var x = VM.S[id],
+    g = 0;
+  while (x && x.s.parent && VM.S[x.s.parent] && g++ < 10) x = VM.S[x.s.parent];
+  return x ? x.id : null;
+}
+function layoutDiagram(vm, pos) {
+  var lanes = diagramLanes(vm),
+    inside = lanes.filter(function (l) {
+      return !l.c.c.external;
+    }),
+    outside = lanes.filter(function (l) {
+      return l.c.c.external;
+    }),
+    x = 0,
+    ROW = 20,
+    BPAD = 30;
+  // Stacks a lane's boxes in columns of `rows`; returns how wide and tall it is.
+  function stack(items, x0, y0, rows) {
+    var cols = Math.max(1, Math.ceil(items.length / rows)),
+      tall = 0;
+    for (var c = 0; c < cols; c++) {
+      var y = y0;
+      items.slice(c * rows, (c + 1) * rows).forEach(function (it) {
+        var k = "svc:" + it.id,
+          h = hOf(k, 58);
+        pos[k] = { x: x0 + c * (SW + 36), y: y };
+        SIZE[k] = { w: SW, h: h };
+        y += h + ROW;
+      });
+      tall = Math.max(tall, y - y0 - ROW);
+    }
+    return { w: cols * (SW + 36) - 36, h: tall };
+  }
+  if (vm.actors.length) {
+    var ay = 0;
+    vm.actors.forEach(function (a) {
+      var k = "act:" + a.id,
+        h = hOf(k, AH);
+      pos[k] = { x: 0, y: ay };
+      SIZE[k] = { w: AW, h: h };
+      ay += h + ROW;
+    });
+    x = AW + DGAP + BPAD;
+  }
+  inside.forEach(function (l, i) {
+    var b = stack(l.items, x, 0, DROWS);
+    x += b.w + (i === inside.length - 1 ? DGAP + BPAD : DGAP);
+  });
+  var oy = 0;
+  outside.forEach(function (l) {
+    var b = stack(l.items, x, oy, DROWS + 2);
+    oy += b.h + PAD + PAD_T + 40;
+  });
+  return pos;
+}
+function renderDiagram(vm) {
+  var lanes = diagramLanes(vm),
+    shown = dict();
+  function keysOf(l) {
+    return l.items.map(function (x) {
+      return "svc:" + x.id;
+    });
+  }
+  var insideKeys = [];
+  lanes.forEach(function (l) {
+    if (!l.c.c.external) insideKeys = insideKeys.concat(keysOf(l));
+  });
+  if (insideKeys.length)
+    addZone(
+      insideKeys,
+      LABELS.boundary || CONFIG.name,
+      LABELS.boundarySub || "what we build and run",
+      "var(--accent)",
+      { cls: "boundary", pad: 30 },
+    );
+  if (vm.actors.length)
+    addZone(
+      vm.actors.map(function (a) {
+        return "act:" + a.id;
+      }),
+      "People",
+      String(vm.actors.length),
+      "var(--edge)",
+    );
+  lanes.forEach(function (l) {
+    addZone(keysOf(l), l.c.c.name, String(l.items.length), lvar(l.c.id));
+    l.items.forEach(function (x) {
+      var k = "svc:" + x.id,
+        el = svcCard(x, { compact: true });
+      cardLayer.appendChild(el);
+      cardEls[k] = el;
+      shown[k] = true;
+    });
+  });
+  vm.actors.forEach(function (a) {
+    var el = actorCard(a);
+    cardLayer.appendChild(el);
+    cardEls["act:" + a.id] = el;
+  });
+  // One arrow per pair of boxes, however many connections run between them.
+  var agg = dict();
+  function add(a, b, label, planned, title) {
+    if (a === b || !cardEls[a] || !cardEls[b]) return;
+    var key = a + ">" + b,
+      x = agg[key];
+    if (!x) x = agg[key] = { a: a, b: b, labels: [], titles: [], live: false };
+    x.labels.push(label || "");
+    x.titles.push(title);
+    if (!planned) x.live = true;
+  }
+  vm.actors.forEach(function (a) {
+    usesOf(a.p).forEach(function (u) {
+      var t = diagramTop(u.to);
+      if (!t || !vm.S[t]) return;
+      add(
+        "act:" + a.id,
+        "svc:" + t,
+        u.label,
+        false,
+        a.p.name + " → " + vm.S[t].s.name + ": " + (u.label || ""),
+      );
+    });
+  });
+  vm.conns.forEach(function (c) {
+    var a = diagramTop(c.c.from),
+      b = diagramTop(c.c.to);
+    if (!a || !b) return;
+    add(
+      "svc:" + a,
+      "svc:" + b,
+      c.c.label,
+      c.c.status === "planned",
+      vm.S[a].s.name + " → " + vm.S[b].s.name + ": " + (c.c.label || ""),
+    );
+  });
+  Object.keys(agg).forEach(function (key) {
+    var x = agg[key],
+      g = mkEdge(true);
+    g.a = x.a;
+    g.b = x.b;
+    g.ortho = true;
+    g.label =
+      x.labels.length === 1
+        ? x.labels[0]
+        : x.labels.length +
+          (x.a.indexOf("act:") === 0 ? " uses" : " connections");
+    if (!x.live) g.g.classList.add("planned");
+    var t = document.createElementNS(NS, "title");
+    t.textContent = x.titles.join("\n");
+    g.g.appendChild(t);
+    edgeEls.push(g);
+  });
+}
+// Right-angled arrows. Each leaves the side of its box that faces the target,
+// runs to the gutter beside the target and turns in. One that would cross a
+// box on the way goes round, above or below everything.
+function routeDiagram() {
+  var rects = Object.keys(cardEls).map(function (k) {
+      var q = posOf(k, DEF),
+        z = SIZE[k] || { w: SW, h: 58 };
+      return { k: k, x: q.x, y: q.y, w: z.w, h: z.h };
+    }),
+    R = dict(),
+    top = Infinity,
+    bottom = -Infinity;
+  rects.forEach(function (r) {
+    R[r.k] = r;
+    top = Math.min(top, r.y);
+    bottom = Math.max(bottom, r.y + r.h);
+  });
+  top -= PAD_T + 30 + 18;
+  bottom += PAD + 30 + 18;
+  var list = edgeEls
+    .filter(function (g) {
+      return g.ortho && R[g.a] && R[g.b];
+    })
+    .map(function (g) {
+      var A = R[g.a],
+        B = R[g.b],
+        same = A.x < B.x + B.w && B.x < A.x + A.w,
+        dir = same || B.x > A.x ? 1 : -1;
+      return {
+        g: g,
+        A: A,
+        B: B,
+        same: same,
+        // The side each end is on: 1 is the right side, -1 the left.
+        out: dir,
+        into: same ? 1 : -dir,
+      };
+    });
+  // Ends on the same side of a box are spread along it, in the order of what
+  // they lead to, so arrows fan out without crossing.
+  function spread(end, side, other) {
+    var groups = dict();
+    list.forEach(function (e) {
+      var key = e[end].k + "|" + e[side];
+      (groups[key] = groups[key] || []).push(e);
+    });
+    Object.keys(groups).forEach(function (key) {
+      var es = groups[key].sort(function (p, q) {
+        return p[other].y - q[other].y || p[other].x - q[other].x;
+      });
+      es.forEach(function (e, i) {
+        var box = e[end];
+        e[end === "A" ? "y1" : "y2"] =
+          box.y + (box.h * (i + 1)) / (es.length + 1);
+        if (end === "B") e.crowd = es.length;
+      });
+    });
+  }
+  spread("A", "out", "B");
+  spread("B", "into", "A");
+  // Each vertical run takes its own slot in its gutter.
+  var slots = dict();
+  function slot(x, side) {
+    var key = Math.round(x) + "|" + side,
+      n = slots[key] || 0;
+    slots[key] = n + 1;
+    return 14 + (n % 13) * 7;
+  }
+  function blocked(x1, y1, x2, y2, e) {
+    var lx = Math.min(x1, x2),
+      hx = Math.max(x1, x2),
+      ly = Math.min(y1, y2),
+      hy = Math.max(y1, y2);
+    return rects.some(function (r) {
+      return (
+        r !== e.A &&
+        r !== e.B &&
+        lx < r.x + r.w + 4 &&
+        hx > r.x - 4 &&
+        ly < r.y + r.h + 4 &&
+        hy > r.y - 4
+      );
+    });
+  }
+  var over = 0,
+    under = 0;
+  list.forEach(function (e) {
+    var x1 = e.out === 1 ? e.A.x + e.A.w : e.A.x,
+      x2 = e.into === 1 ? e.B.x + e.B.w : e.B.x,
+      pts;
+    if (e.same) {
+      var loop = Math.max(x1, x2) + slot(Math.max(x1, x2), 1);
+      pts = [
+        [x1, e.y1],
+        [loop, e.y1],
+        [loop, e.y2],
+        [x2, e.y2],
+      ];
+    } else {
+      var mx = x2 + e.into * slot(x2, e.into);
+      if (
+        blocked(x1, e.y1, mx, e.y1, e) ||
+        blocked(mx, e.y1, mx, e.y2, e) ||
+        blocked(mx, e.y2, x2, e.y2, e)
+      ) {
+        var ex = x1 + e.out * slot(x1, e.out),
+          up = (e.y1 + e.y2) / 2 - top < bottom - (e.y1 + e.y2) / 2,
+          cy = up ? top - 8 * over++ : bottom + 8 * under++;
+        pts = [
+          [x1, e.y1],
+          [ex, e.y1],
+          [ex, cy],
+          [mx, cy],
+          [mx, e.y2],
+          [x2, e.y2],
+        ];
+      } else
+        pts = [
+          [x1, e.y1],
+          [mx, e.y1],
+          [mx, e.y2],
+          [x2, e.y2],
+        ];
+    }
+    // Corners are rounded by as much as the shorter leg allows.
+    var d = "M" + pts[0][0] + " " + pts[0][1];
+    for (var i = 1; i < pts.length - 1; i++) {
+      var p = pts[i - 1],
+        c = pts[i],
+        n = pts[i + 1],
+        r = Math.min(
+          8,
+          (Math.abs(c[0] - p[0]) + Math.abs(c[1] - p[1])) / 2,
+          (Math.abs(n[0] - c[0]) + Math.abs(n[1] - c[1])) / 2,
+        ),
+        bx = c[0] - Math.sign(c[0] - p[0]) * r,
+        by = c[1] - Math.sign(c[1] - p[1]) * r,
+        ax = c[0] + Math.sign(n[0] - c[0]) * r,
+        ay = c[1] + Math.sign(n[1] - c[1]) * r;
+      d += "L" + bx + " " + by + "Q" + c[0] + " " + c[1] + " " + ax + " " + ay;
+    }
+    d += "L" + x2 + " " + e.y2;
+    e.g.p.setAttribute("d", d);
+    // The arrowhead points into the box.
+    var hx = x2 + e.into * 9;
+    e.g.m.setAttribute(
+      "d",
+      "M" +
+        hx +
+        " " +
+        (e.y2 - 4.5) +
+        "L" +
+        x2 +
+        " " +
+        e.y2 +
+        "L" +
+        hx +
+        " " +
+        (e.y2 + 4.5),
+    );
+    e.g.o.setAttribute("d", "");
+    if (e.g.t) {
+      var label = e.g.label || "";
+      if (label.length > 30) label = label.slice(0, 28).trimEnd() + "…";
+      e.g.t.setAttribute("text-anchor", e.into === 1 ? "start" : "end");
+      e.g.t.setAttribute("x", x2 + e.into * 14);
+      e.g.t.setAttribute("y", e.y2 - 4);
+      e.g.t.textContent = label;
+      // A label is always shown unless too many arrive together to read them;
+      // those show on hover, like everywhere else on the map.
+      e.g.g.classList.toggle("lbl", e.crowd <= 3);
+    }
+  });
+}
+function openDiagram() {
+  diag = true;
+  path = [];
+  view = "arch";
+  sel = null;
+  per = null;
+  hov = null;
+  hidePanel();
+  NAV = [];
+  render();
+  fitAll();
+  syncHash(true);
 }
 function flowNodes(f) {
   var order = [];
@@ -817,7 +1538,9 @@ function scope() {
     ? "schema"
     : view === "flow"
       ? "flow/" + flowId
-      : "arch/" + path.join("/");
+      : diag
+        ? "diagram"
+        : "arch/" + path.join("/");
 }
 function posOf(key, def) {
   return P[scope() + "|" + key] || def[key];
@@ -881,6 +1604,7 @@ function render() {
     view = "arch";
     path = [];
   }
+  if (view !== "arch" || path.length) diag = false;
   cardLayer.innerHTML = "";
   zoneLayer.innerHTML = "";
   svg.innerHTML = "";
@@ -891,6 +1615,8 @@ function render() {
   if (view === "schema") renderSchema();
   else if (view === "flow") renderFlow();
   else renderArch();
+  $("lists").hidden = view !== "arch" || path.length < 2;
+  if (!$("lists").hidden) renderLists();
   showCanvasEmpty(
     view === "schema" && !VM.tables.length
       ? "data"
@@ -1002,6 +1728,10 @@ function renderSchema() {
 function renderArch() {
   var vm = VM;
   DEF = layoutArch(vm);
+  if (diag && !path.length) {
+    renderDiagram(vm);
+    return;
+  }
   if (!path.length) {
     var inside = vm.cats.filter(function (c) {
         return !c.c.external;
@@ -1136,37 +1866,21 @@ function renderArch() {
     });
     return;
   }
+  if (path.length > 1) return;
   var L = levelSets(),
-    lastName =
-      path.length === 1
-        ? (
-            vm.cats.filter(function (c) {
-              return c.id === path[0];
-            })[0] || { c: { name: path[0] } }
-          ).c.name
-        : vm.S[path[path.length - 1]]
-          ? vm.S[path[path.length - 1]].s.name + " · parts"
-          : "Parts";
+    lastName = (
+      vm.cats.filter(function (c) {
+        return c.id === path[0];
+      })[0] || { c: { name: path[0] } }
+    ).c.name;
   var mainKeys = L.main.map(function (x) {
       return "svc:" + x.id;
     }),
     stubKeys = L.stubs.map(function (x) {
       return "svc:" + x.id;
     }),
-    zoneColour = path.length === 1 ? path[0] : catOf(path[path.length - 1]);
-  var mainZones =
-    path.length > 1 && vm.S[path[path.length - 1]]
-      ? partGroups(L.main).map(function (g) {
-          return [
-            g.items.map(function (x) {
-              return "svc:" + x.id;
-            }),
-            vm.S[path[path.length - 1]].s.name + " · " + g.name,
-            zoneColour,
-          ];
-        })
-      : [[mainKeys, lastName, zoneColour]];
-  mainZones
+    zoneColour = path[0];
+  [[mainKeys, lastName, zoneColour]]
     .concat([[stubKeys, "Talks to, in other categories", "records"]])
     .forEach(function (z) {
       if (!z[0].length) return;
@@ -1191,7 +1905,7 @@ function renderArch() {
     em.innerHTML =
       "<b>" +
       esc(lastName) +
-      "<span>Nothing recorded inside yet. Ask Claude to record its parts.</span></b>";
+      "<span>Nothing recorded here yet.</span></b>";
     zoneLayer.appendChild(em);
     zoneEls.push({ el: em, keys: [], fixed: { x: 0, y: 0, w: 640, h: 120 } });
   }
@@ -1337,11 +2051,12 @@ function place(only) {
         x1 = Math.max(x1, q.x + zw);
         y1 = Math.max(y1, q.y + z.hFor(k));
       });
+      var zp = z.pad || 0;
       z.box = {
-        x: x0 - PAD,
-        y: y0 - PAD_T,
-        w: x1 - x0 + PAD * 2,
-        h: y1 - y0 + PAD_T + PAD,
+        x: x0 - PAD - zp,
+        y: y0 - PAD_T - zp,
+        w: x1 - x0 + PAD * 2 + zp * 2,
+        h: y1 - y0 + PAD_T + PAD + zp * 2,
       };
     }
     z.el.style.left = z.box.x + "px";
@@ -1349,7 +2064,15 @@ function place(only) {
     z.el.style.width = z.box.w + "px";
     z.el.style.height = z.box.h + "px";
   });
+  // The diagram's arrows share gutters, so they are all routed together.
+  if (
+    edgeEls.some(function (g) {
+      return g.ortho;
+    })
+  )
+    routeDiagram();
   edgeEls.forEach(function (g) {
+    if (g.ortho) return;
     if (only && edgeEnds(g).indexOf(only) === -1) return;
     if (g.e) {
       var S = posOf(g.e.s, DEF),
@@ -1560,6 +2283,7 @@ function related(k) {
   return set;
 }
 function apply() {
+  filterLists();
   document.querySelectorAll(".badge.w, .badge.r").forEach(function (b) {
     b.remove();
   });
@@ -2077,6 +2801,8 @@ function renderChrome() {
   $("fadeWrap").hidden = view !== "schema";
   $("bEnums").hidden = view !== "schema";
   $("personas").hidden = view !== "schema";
+  $("bDiagram").setAttribute("aria-pressed", String(diag));
+  $("dlegend").hidden = !diag;
   var B = VM.B,
     n = checkSummary(),
     tops = VM.services.filter(function (x) {
@@ -2346,6 +3072,26 @@ function goTo(ref) {
   }
   if (kind === "service") {
     if (!VM.S[id]) return;
+    // A part is a row in its service's tables, not a box.
+    if (VM.S[id].s.parent && VM.S[VM.S[id].s.parent]) {
+      view = "arch";
+      diag = false;
+      path = pathFor(id);
+      per = null;
+      hov = null;
+      list.focus = id;
+      render();
+      select("svc:" + id);
+      return;
+    }
+    // Back from a part to its service keeps the tables open.
+    if (view === "arch" && path.length > 1 && path[path.length - 1] === id) {
+      sel = null;
+      apply();
+      openService(id);
+      syncHash(false);
+      return;
+    }
     view = "arch";
     path = pathFor(id);
     sel = null;
@@ -2531,11 +3277,109 @@ function openTable(name) {
     '<div class="col"><div class="cl1"><code>updated_at</code><span class="t">timestamptz</span></div><p>Last change; doubles as the edit-conflict check.</p></div>';
   showPanel(name, b, true, { type: "table", id: name });
 }
+// A parameter or body field list as a small table.
+function fieldTable(rows, withIn) {
+  return (
+    '<table class="ftable"><thead><tr><th scope="col">Name</th>' +
+    (withIn ? '<th scope="col">In</th>' : "") +
+    '<th scope="col">Type</th><th scope="col">Description</th></tr></thead><tbody>' +
+    rows
+      .map(function (f) {
+        return (
+          "<tr><td><code>" +
+          esc(f.name) +
+          "</code>" +
+          (f.required === true ? ' <span class="req">required</span>' : "") +
+          "</td>" +
+          (withIn ? "<td>" + esc(f.in || "") + "</td>" : "") +
+          "<td>" +
+          (f.type ? "<code>" + esc(f.type) + "</code>" : "") +
+          "</td><td>" +
+          esc(f.desc || "") +
+          "</td></tr>"
+        );
+      })
+      .join("") +
+    "</tbody></table>"
+  );
+}
+// One endpoint, job, library or environment variable: what it does and, for an
+// endpoint, how to call it.
+function openPart(id) {
+  var x = VM.S[id],
+    s = x.s,
+    t = stype(s),
+    params = Array.isArray(s.params) ? s.params : [],
+    body = Array.isArray(s.body) ? s.body : [];
+  var b =
+    '<div class="meta"><span class="pill">' +
+    esc(TYPE_LABEL[t]) +
+    "</span>" +
+    (s.public === true
+      ? '<span class="pill">shipped to the browser</span>'
+      : "") +
+    "</div>";
+  b += s.purpose
+    ? '<p class="lead">' + esc(s.purpose) + "</p>"
+    : '<p class="small">' +
+      (t === "endpoint"
+        ? "No documentation recorded for this endpoint yet."
+        : "No description recorded yet.") +
+      " Ask your AI agent to run <code>archmap brief --task review</code> and follow it.</p>";
+  if (s.public === true)
+    b +=
+      '<p class="small">Its value is built into the app people download, so anyone can read it. It must never hold a secret.</p>';
+  function fact(title, value, mono) {
+    if (value)
+      b +=
+        "<h3>" +
+        title +
+        '</h3><p class="fact">' +
+        (mono ? "<code>" + esc(value) + "</code>" : esc(value)) +
+        "</p>";
+  }
+  fact("Who can call it", s.auth);
+  if (params.length)
+    b +=
+      "<h3>Parameters · " + params.length + "</h3>" + fieldTable(params, true);
+  if (body.length)
+    b += "<h3>Request body · " + body.length + "</h3>" + fieldTable(body);
+  fact("Returns", s.returns);
+  fact("Runs", s.schedule);
+  fact("Package", s.package, true);
+  if (s.version)
+    b +=
+      '<h3>Version</h3><p class="fact"><code>' +
+      esc(s.version) +
+      "</code>" +
+      (s.latest ? " · latest <code>" + esc(s.latest) + "</code>" : "") +
+      (own(FRESH, s.fresh)
+        ? ' <span class="fresh f-' +
+          esc(s.fresh) +
+          '">' +
+          esc(FRESH[s.fresh]) +
+          "</span>"
+        : "") +
+      "</p>";
+  if (s.evidence)
+    b +=
+      '<section class="doc-dev"><h3>Where in the code</h3><ul class="code"><li><code>' +
+      esc(s.evidence) +
+      "</code></li></ul></section>";
+  showPanel(s.name || id, b, t === "endpoint" || t === "env", {
+    type: "service",
+    id: id,
+  });
+}
 function openService(id) {
   var x = VM.S[id],
     vm = VM;
   if (!x) return;
   var s = x.s;
+  if (s.parent && vm.S[s.parent]) {
+    openPart(id);
+    return;
+  }
   var b =
     '<div class="meta"><span class="pill" style="--z:' +
     esc(lvar(catOf(id))) +
@@ -2545,19 +3389,7 @@ function openService(id) {
     (s.status ? '<span class="pill">' + esc(s.status) + "</span>" : "") +
     (x.st ? '<span class="pill">' + esc(x.st) + "</span>" : "") +
     "</div>";
-  var parent = s.parent && vm.S[s.parent];
   if (own(DOCS, id)) b += docBlocks(id);
-  else if (parent)
-    b +=
-      "<h3>Part of</h3>" +
-      '<div class="links">' +
-      linkBtn(
-        "service:" + s.parent,
-        parent.s.name,
-        TYPE_LABEL[stype(parent.s)] || "",
-        lvar(catOf(s.parent)),
-      ) +
-      "</div>";
   else b += '<p class="lead">' + esc(s.purpose || "") + "</p>";
   // Parts, docs and history stay off the drawer to keep it short; parts open by drilling into the box.
   if (s.opens === "schema" && layerCount("data") === 0) b += emptyState("data");
@@ -2803,6 +3635,7 @@ function activate(key) {
   select(key);
 }
 function drill(p) {
+  diag = false;
   path = p;
   view = "arch";
   sel = null;
@@ -2839,6 +3672,11 @@ function renderCrumbs() {
     parts = [
       { label: "All", p: [] },
       { label: "Flow: " + VM.FL[flowId].f.name, p: null },
+    ];
+  if (diag)
+    parts = [
+      { label: "All", p: [] },
+      { label: "Diagram", p: null },
     ];
   var last = parts.length - 1,
     isSchema = view === "schema";
@@ -2945,6 +3783,7 @@ function hashFor() {
   }
   if (sel && sel.view === "arch" && sel.key.indexOf("svc:") === 0)
     return "s-" + e(sel.key.slice(4));
+  if (diag) return "diagram";
   if (!path.length) return "";
   if (path.length === 1) return "c-" + e(path[0]);
   return "in-" + e(path[path.length - 1]);
@@ -2981,8 +3820,10 @@ function applyHash(raw) {
   routing = true;
   try {
     if (!h) {
-      if (view !== "arch" || path.length) drill([]);
+      if (view !== "arch" || path.length || diag) drill([]);
       clearSel();
+    } else if (h === "diagram") {
+      if (!diag) openDiagram();
     } else if (h === "schema") {
       if (view !== "schema") setView("schema");
       clearSel();
@@ -3020,7 +3861,7 @@ window.addEventListener("hashchange", onRoute);
 var V = { x: 0, y: 0, k: 1 };
 // Controls drawn over the map: pointers and wheels on them don't pan or zoom it.
 var OVERLAYS =
-  ".panel, .controls, .bottombar, .mini, .legend, .msg div, .start";
+  ".panel, .controls, .bottombar, .mini, .legend, .msg div, .start, .lists";
 function setT() {
   world.style.transform =
     "translate(" + V.x + "px," + V.y + "px) scale(" + V.k + ")";
@@ -3358,6 +4199,9 @@ $("q").addEventListener("input", function () {
 $("q").addEventListener("keydown", function (ev) {
   if (ev.key !== "Enter" || !query) return;
   showStart(false);
+  // Inside a service the search has already narrowed the table.
+  if (!$("lists").hidden && $("lists").querySelector("tbody tr:not([hidden])"))
+    return;
   var hit = Object.keys(cardEls).filter(matchKey)[0];
   if (!hit) {
     // look in the other view
@@ -3378,6 +4222,11 @@ $("q").addEventListener("keydown", function (ev) {
 });
 $("fadePerson").onchange = apply;
 $("bFlows").onclick = openFlows;
+$("bDiagram").onclick = function () {
+  showStart(false);
+  if (diag) drill([]);
+  else openDiagram();
+};
 $("mini").addEventListener("pointerdown", function (ev) {
   miniPan(ev);
   var mv = function (e) {

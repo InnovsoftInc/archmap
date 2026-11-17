@@ -17,6 +17,9 @@ export type Scan = {
     name: string;
   }>[];
   outside: Fact<{ name: string; via: "env" | "sdk" }>[];
+  // The environment variables code reads, once per file. `public` is true
+  // when the name's prefix makes a bundler ship the value to the browser.
+  env: Fact<{ name: string; public: boolean }>[];
   ci: Fact<{ workflow: string; deploys: string[] }>[];
   unreadable: Fact<{ reason: string }>[];
   // How many files are code (a common code extension, or anything under a

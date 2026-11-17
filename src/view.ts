@@ -64,6 +64,18 @@ const column = (c: Obj): Column => ({
   desc: text(c.desc),
 });
 
+/** An endpoint's parameters or body fields; undefined when it lists none. */
+const fields = (v: unknown): Obj[] | undefined => {
+  const out = list(v).map((f) => ({
+    name: text(f.name) ?? "",
+    in: text(f.in),
+    type: text(f.type),
+    required: f.required === true ? true : undefined,
+    desc: text(f.desc),
+  }));
+  return out.length ? out : undefined;
+};
+
 /** A library's version, and how far behind the latest release it is. */
 export type LibInfo = {
   package: string;
@@ -123,6 +135,12 @@ export const toViewModel = (
           parent: d.id,
           type: "endpoint",
           name: text(e.route),
+          purpose: text(e.does),
+          auth: text(e.auth),
+          params: fields(e.params),
+          body: fields(e.body),
+          returns: text(e.returns),
+          evidence: text(e.evidence),
         };
       });
       list(d.data.jobs).forEach((j, i) => {
@@ -130,6 +148,9 @@ export const toViewModel = (
           parent: d.id,
           type: "job",
           name: text(j.name),
+          purpose: text(j.does),
+          schedule: text(j.schedule),
+          evidence: text(j.evidence),
         };
       });
       list(d.data.libraries).forEach((l, i) => {
@@ -143,6 +164,17 @@ export const toViewModel = (
           version: v?.declared,
           latest: v?.latest,
           fresh: v?.fresh,
+          evidence: text(l.evidence),
+        };
+      });
+      list(d.data.env).forEach((e, i) => {
+        m.services[`${d.id}.env-${i}`] = {
+          parent: d.id,
+          type: "env",
+          name: text(e.name),
+          purpose: text(e.why),
+          public: e.public === true ? true : undefined,
+          evidence: text(e.evidence),
         };
       });
     } else if (d.folder === "stores") {

@@ -3,6 +3,7 @@ import { readsRoutes, routesReader } from "./routes.ts";
 import { readsSchema, schemaReader } from "./schema.ts";
 import { infraReader, readsInfra } from "./infra.ts";
 import { outsideReader, readsOutside } from "./outside.ts";
+import { envReader, readsEnv } from "./env.ts";
 import { ciReader, readsCi } from "./ci.ts";
 import { sortFacts, walk } from "./walk.ts";
 import type { FileCache, Reader, Scan } from "./types.ts";
@@ -16,14 +17,21 @@ const READERS: Reader[] = [
   schemaReader,
   infraReader,
   outsideReader,
+  envReader,
   ciReader,
 ];
 
 /** Whether any reader opens `file`: the files a scan's leads depend on. */
 export const scannerReads = (file: string): boolean =>
-  [readsApps, readsRoutes, readsSchema, readsInfra, readsOutside, readsCi].some(
-    (reads) => reads(file),
-  );
+  [
+    readsApps,
+    readsRoutes,
+    readsSchema,
+    readsInfra,
+    readsOutside,
+    readsEnv,
+    readsCi,
+  ].some((reads) => reads(file));
 
 // Files in common programming languages: a repo with any of them has code,
 // even with no package.json, routes or infrastructure.
@@ -43,6 +51,7 @@ export const scan = (root: string): Scan => {
     schemaFiles: [],
     infra: [],
     outside: [],
+    env: [],
     ci: [],
     unreadable,
     codeFiles: files.filter((f) => f.startsWith("src/") || CODE.test(f)).length,
@@ -59,6 +68,7 @@ export const scan = (root: string): Scan => {
     result.schemaFiles.push(...(part.schemaFiles ?? []));
     result.infra.push(...(part.infra ?? []));
     result.outside.push(...(part.outside ?? []));
+    result.env.push(...(part.env ?? []));
     result.ci.push(...(part.ci ?? []));
     result.unreadable.push(...(part.unreadable ?? []));
   }

@@ -102,7 +102,12 @@ const layers = (docs: Doc[]): string[] => {
     );
   const endpoints = itemsIn(docs, "endpoints");
   const jobs = itemsIn(docs, "jobs");
-  if (endpoints + jobs) out.push(`parts: ${endpoints} endpoints, ${jobs} jobs`);
+  const libraries = itemsIn(docs, "libraries");
+  const env = itemsIn(docs, "env");
+  if (endpoints + jobs + libraries + env)
+    out.push(
+      `parts: ${endpoints} endpoints, ${jobs} jobs, ${libraries} libraries, ${env} environment variables`,
+    );
   const tables = itemsIn(docs, "tables");
   if (tables) out.push(`data: ${tables} tables`);
   const personas = count(docs, "personas");

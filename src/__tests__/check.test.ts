@@ -267,7 +267,7 @@ describe("runCheck", () => {
       lines.filter((l) => /^(overview|parts|data|people)/.test(l)),
     ).toEqual([
       "overview: 1 services, 1 stores, 0 external",
-      "parts: 1 endpoints, 0 jobs",
+      "parts: 1 endpoints, 0 jobs, 0 libraries, 0 environment variables",
       "data: 1 tables",
       "people and flows: 1 personas, 0 flows",
     ]);
@@ -426,6 +426,107 @@ describe("unconfirmedLeads: env and SDK leads", () => {
     data: Record<string, unknown>,
     body = "",
   ) => ({ id, folder, file: `${folder}/${id}.md`, data, body });
+
+  it("names a variable code reads once per app, saying where it runs and whether it is declared", () => {
+    const s = scan(root);
+    s.apps.push(
+      {
+        name: "api",
+        path: "apps/api",
+        deps: [],
+        file: "apps/api/package.json",
+      },
+      {
+        name: "web",
+        path: "apps/web",
+        deps: [],
+        file: "apps/web/package.json",
+      },
+    );
+    s.outside.push({ name: "API_KEY", via: "env", file: ".env.example" });
+    s.env.push(
+      { name: "API_KEY", public: false, file: "apps/api/src/a.ts" },
+      { name: "API_KEY", public: false, file: "apps/api/src/b.ts" },
+      { name: "SENTRY_DSN", public: false, file: "apps/api/src/b.ts" },
+      { name: "VITE_API_URL", public: true, file: "apps/web/src/api.ts" },
+      { name: "LOG_LEVEL", public: false, file: "scripts/run.ts" },
+    );
+    const used = unconfirmedLeads(s, [], []).filter(
+      (l) => l.key.startsWith("scan:env:") && l.file !== ".env.example",
+    );
+    expect(used).toEqual([
+      {
+        key: "scan:env:API_KEY@apps/api/src/a.ts",
+        file: "apps/api/src/a.ts",
+        text: "environment variable API_KEY read in apps/api",
+      },
+      {
+        key: "scan:env:SENTRY_DSN@apps/api/src/b.ts",
+        file: "apps/api/src/b.ts",
+        text: "environment variable SENTRY_DSN read in apps/api (not in a .env.example)",
+      },
+      {
+        key: "scan:env:VITE_API_URL@apps/web/src/api.ts",
+        file: "apps/web/src/api.ts",
+        text: "environment variable VITE_API_URL read in apps/web (shipped to the browser, not in a .env.example)",
+      },
+      {
+        key: "scan:env:LOG_LEVEL@scripts/run.ts",
+        file: "scripts/run.ts",
+        text: "environment variable LOG_LEVEL read in scripts/run.ts (not in a .env.example)",
+      },
+    ]);
+  });
+
+  it("confirms a variable code reads by a mention in the doc that covers the file", () => {
+    const s = scan(root);
+    s.env.push(
+      { name: "API_KEY", public: false, file: "apps/api/src/a.ts" },
+      { name: "VITE_API_URL", public: true, file: "apps/web/src/api.ts" },
+    );
+    const left = (docs: ReturnType<typeof doc>[]) =>
+      unconfirmedLeads(s, docs, [])
+        .map((l) => l.key)
+        .filter((k) => k.startsWith("scan:env:"));
+    const api = (body: string) =>
+      doc("services", "api", { code: ["apps/api"] }, body);
+    // The web doc naming the API's variable doesn't cover it: the API's doc must.
+    expect(
+      left([
+        api("Runs on Node."),
+        doc(
+          "services",
+          "web",
+          { code: ["apps/web"] },
+          "Needs `VITE_API_URL` and `API_KEY`.",
+        ),
+      ]),
+    ).toEqual(["scan:env:API_KEY@apps/api/src/a.ts"]);
+    expect(left([api("Needs `API_KEY`.")])).toEqual([
+      "scan:env:VITE_API_URL@apps/web/src/api.ts",
+    ]);
+    // The covering doc's `env` list confirms it as well as its body does.
+    expect(
+      left([
+        doc(
+          "services",
+          "api",
+          { code: ["apps/api"], env: [{ name: "API_KEY" }] },
+          "Runs on Node.",
+        ),
+        doc(
+          "services",
+          "web",
+          { code: ["apps/web"], env: [{ name: "VITE_API_URL", public: true }] },
+          "The web app.",
+        ),
+      ]),
+    ).toEqual([]);
+    // With no doc covering the file yet, a mention anywhere confirms it.
+    expect(
+      left([doc("external", "x", {}, "`API_KEY` and `VITE_API_URL`.")]),
+    ).toEqual([]);
+  });
 
   it("gives .env.example variables their own kind, confirmed by a mention in an external doc's data or any doc's body", () => {
     const s = scan(root);

@@ -15,7 +15,50 @@ import type { Doc } from "./types.ts";
 
 export type Lead = { key: string; file: string; text: string };
 
-type Raw = { kind: string; name: string; file: string; text: string };
+type Raw = {
+  kind: string;
+  name: string;
+  file: string;
+  text: string;
+  // An environment variable found where code reads it, not in a .env.example.
+  read?: boolean;
+};
+
+// The app a file belongs to: the deepest app folder holding it, or the file
+// itself when no app does.
+const appOf = (s: Scan, file: string): string =>
+  s.apps
+    .map((a) => a.path)
+    .filter((p) => isUnder(file, p))
+    .toSorted((a, b) => b.length - a.length)
+    .at(0) ?? file;
+
+// One lead per variable and app: the first file in the app that reads it.
+const envReads = (s: Scan): Raw[] => {
+  const declared = new Set(
+    s.outside.filter((o) => o.via === "env").map((o) => o.name),
+  );
+  const seen = new Set<string>();
+  return s.env.flatMap((e) => {
+    const app = appOf(s, e.file);
+    const id = `${app}\0${e.name}`;
+    if (seen.has(id)) return [];
+    seen.add(id);
+    const notes = [
+      ...(e.public ? ["shipped to the browser"] : []),
+      ...(declared.has(e.name) ? [] : ["not in a .env.example"]),
+    ];
+    return [
+      {
+        kind: "env",
+        name: e.name,
+        file: e.file,
+        text: `environment variable ${e.name} read in ${app}${notes.length ? ` (${notes.join(", ")})` : ""}`,
+        read: true,
+      },
+    ];
+  });
+};
 
 // A lead's key is `scan:<kind>:<name>@<file>`: the same name in two files
 // (an `api` service in two compose files) is two leads.
@@ -53,6 +96,7 @@ const rawLeads = (s: Scan): Raw[] => [
           text: `outside service ${o.name}`,
         },
   ),
+  ...envReads(s),
   ...s.infra.map((i) => ({
     kind: "infra",
     name: `${i.type}:${i.name}`,
@@ -123,6 +167,13 @@ const wordsIn = (v: unknown, out: Set<string>): void => {
   else if (isObj(v)) for (const x of Object.values(v)) wordsIn(x, out);
 };
 
+// The variables a service doc lists in its `env`.
+const envNames = (d: Doc): string[] =>
+  list(d.data.env).flatMap((e) => {
+    const name = isObj(e) ? str(e.name) : undefined;
+    return name ? [name] : [];
+  });
+
 // An SDK lead's name is the scanner's service name ("Azure", "AWS",
 // "SendGrid"). An external doc covers it when its id or name is that name, or
 // starts with it and a separator, so `azure-blob`, `aws.s3`, `azure/storage`
@@ -136,8 +187,12 @@ const coversService = (doc: string, lead: string): boolean =>
  * - route: an `endpoints[].route` naming it (method case and a trailing slash ignored);
  * - table: a `tables[].name` in a store;
  * - outside (an SDK in package.json): an external doc whose id or name covers it (coversService);
- * - env (a variable in a `.env.example`): its name as a word anywhere in an
- *   external doc's frontmatter (an `env` list, say) or in any doc's body;
+ * - env (a variable in a `.env.example`): a service's `env[].name`, or its
+ *   name as a word anywhere in an external doc's frontmatter or in any doc's body;
+ * - env (a variable code reads): an `env[].name`, or its name as a word in the
+ *   body, of a doc whose `code` covers the file that reads it, so each app's
+ *   doc names what that app needs; when no doc covers the file yet, as for a
+ *   `.env.example` one;
  * - app: a code entry that is its path or inside it;
  * - infra, ci: a code entry that is the file or a folder above it;
  * - app, infra, ci also: an `evidence` entry citing the lead's file.
@@ -181,7 +236,10 @@ export const unconfirmedLeads = (
     .flatMap((n) => (n ? [n.toLowerCase()] : []));
   const mentioned = new Set<string>();
   for (const d of externalDocs) wordsIn(d.data, mentioned);
-  for (const d of docs) wordsIn(d.body, mentioned);
+  for (const d of docs) {
+    wordsIn(d.body, mentioned);
+    for (const name of envNames(d)) mentioned.add(name);
+  }
   const coversFile = (file: string): boolean =>
     codes.some((c) => isUnder(file, c));
   const confirmed = (lead: Raw): boolean => {
@@ -190,7 +248,22 @@ export const unconfirmedLeads = (
     if (kind === "table") return tables.has(name);
     if (kind === "outside")
       return external.some((e) => coversService(e, name.toLowerCase()));
-    if (kind === "env") return mentioned.has(name);
+    if (kind === "env") {
+      if (!lead.read) return mentioned.has(name);
+      const covering = docs.filter((d) =>
+        list(d.data.code).some((c) => {
+          const code = str(c);
+          return code !== undefined && isUnder(lead.file, normalizePath(code));
+        }),
+      );
+      if (!covering.length) return mentioned.has(name);
+      const words = new Set<string>();
+      for (const d of covering) {
+        wordsIn(d.body, words);
+        for (const n of envNames(d)) words.add(n);
+      }
+      return words.has(name);
+    }
     if (evidenceFiles.has(lead.file)) return true;
     if (kind === "app")
       return codes.some((c) => c === name || isUnder(c, name));

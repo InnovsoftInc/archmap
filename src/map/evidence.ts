@@ -22,7 +22,7 @@ export const evidenceOf = (doc: Doc): Cited[] => {
         ...(entry.status === "planned" ? { planned: true as const } : {}),
       });
   };
-  for (const key of ["connects", "endpoints", "jobs", "libraries", "roles"])
+  for (const key of ["connects", "endpoints", "jobs", "libraries", "env", "roles"])
     for (const [entry, path] of entries(doc, key)) add(entry, path);
   for (const [table, path] of entries(doc, "tables")) {
     add(table, path);

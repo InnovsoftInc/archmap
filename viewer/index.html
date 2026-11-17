@@ -76,6 +76,9 @@
             ><input id="fadePerson" type="checkbox" checked /> Fade links to
             person</label
           >
+          <button type="button" class="tbtn" id="bDiagram" aria-pressed="false">
+            Diagram
+          </button>
           <button type="button" class="tbtn" id="bFlows">Flows</button>
           <button type="button" class="tbtn" id="bEnums" hidden>
             Enum types
@@ -122,6 +125,18 @@
           hidden
           aria-labelledby="panelTitle"
         ></aside>
+        <section
+          class="lists"
+          id="lists"
+          aria-labelledby="listsTitle"
+          hidden
+        ></section>
+        <div class="dlegend" id="dlegend" hidden>
+          <span><i class="k-live"></i>Live</span>
+          <span><i class="k-planned"></i>Planned</span>
+          <span><i class="k-retiring"></i>Retiring</span>
+          <span><i class="k-store"></i>Stores data</span>
+        </div>
         <div class="sr-only" id="live" aria-live="polite"></div>
         <section class="start" id="start" aria-label="Start here" hidden>
           <article>
