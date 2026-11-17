@@ -1903,3 +1903,61 @@ tr.on .rowbtn {
   font-size: 13.5px;
   line-height: 1.5;
 }
+
+/* What a box is built with, and the options when it is still to confirm. */
+.card.svc .tech {
+  padding: 0 12px 8px;
+  color: var(--muted);
+  font: 11.5px/1.35 var(--sans);
+  overflow-wrap: anywhere;
+}
+.card.svc.is-open {
+  border-style: dotted;
+  border-width: 2px;
+}
+.card.svc .mt.open {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.edges g.async {
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+/* A frame round the boxes that run on one host. */
+.zone.host {
+  border-radius: 10px;
+  border-style: solid;
+  border-width: 1px;
+  background: color-mix(in srgb, var(--z) 9%, transparent);
+}
+.zone.host b {
+  left: 10px;
+  top: 6px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.dlegend .k-open {
+  border-style: dotted;
+  border-width: 2px;
+}
+.dlegend .k-line {
+  width: 22px;
+  height: 0;
+  border: 0;
+  border-top: 1.5px solid var(--edge);
+  border-radius: 0;
+  background: none;
+}
+.dlegend .k-async {
+  border-top-style: dotted;
+  border-top-width: 2px;
+}
+.panel ul.qs {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}

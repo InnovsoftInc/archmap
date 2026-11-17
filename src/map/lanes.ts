@@ -68,6 +68,7 @@ const PLATFORM_KINDS = new Set([
   "secrets",
   "monitoring",
   "ci",
+  "distribution",
   "dns",
 ]);
 

@@ -842,11 +842,19 @@ function svcCard(x, opts) {
     compact = opts && opts.compact;
   var drillable =
     !stub && !compact && (s.opens === "schema" || childrenOf(x.id).length > 0);
+  // Still to confirm: the map lists the options being chosen between.
+  var options = Array.isArray(s.options) ? s.options : [],
+    extra =
+      (s.tech ? '<div class="tech">' + esc(s.tech) + "</div>" : "") +
+      (options.length
+        ? '<div class="tech">e.g. ' + esc(options.join(", ")) + "</div>"
+        : "");
   el.className =
     "card svc t-" +
     t +
     (stub ? " stub" : "") +
     (compact ? " compact" : "") +
+    (options.length && !stub ? " is-open" : "") +
     (compact && s.status === "planned" ? " is-planned" : "") +
     (compact && s.status === "retiring" ? " is-retiring" : "") +
     (x.st ? " " + x.st : "");
@@ -865,6 +873,7 @@ function svcCard(x, opts) {
           ? '<span class="mt">· ' + esc(s.status) + "</span>"
           : "") +
         versionBadge(s)) +
+    (options.length && !stub ? '<span class="mt open">to confirm</span>' : "") +
     keyBadges(x.st) +
     (drillable ? '<span class="drill">Open ›</span>' : "") +
     "</div>";
@@ -875,6 +884,7 @@ function svcCard(x, opts) {
     esc(s.name) +
     "</span></div>" +
     meta +
+    (stub ? "" : extra) +
     (stub || compact
       ? ""
       : '<div class="sbody"><span class="pur">' +
@@ -914,6 +924,8 @@ function addZone(keys, title, sub, color, opts) {
     },
     w: null,
     pad: (opts && opts.pad) || 0,
+    tight: !!(opts && opts.tight),
+    top: (opts && opts.top) || 0,
   });
 }
 // Architecture is browsed by level: path [] = categories, [cat] = items in a category, [cat, item, ...] = parts of an item.
@@ -990,7 +1002,13 @@ function levelSets() {
     if (!x)
       x = agg[key] = {
         id: key,
-        c: { from: a.id, to: b.id, label: c.c.label || "", status: c.c.status },
+        c: {
+          from: a.id,
+          to: b.id,
+          label: c.c.label || "",
+          status: c.c.status,
+          async: c.c.async === true,
+        },
         st: c.st,
         n: 1,
       };
@@ -998,6 +1016,7 @@ function levelSets() {
       x.n++;
       x.c.label = x.n + " connections";
       if (c.c.status !== "planned") x.c.status = c.c.status;
+      if (c.c.async !== true) x.c.async = false;
       if (x.st !== c.st) x.st = "changed";
     }
   });
@@ -1132,20 +1151,44 @@ function layoutArch(vm) {
 // ---------- diagram: every top-level service, store and outside system on one
 // page, grouped by lane, with the people on the left and each connection drawn.
 var DGAP = 170,
-  DROWS = 6;
+  DROWS = 6,
+  HOST_T = 30,
+  HOST_PAD = 10;
 function diagramLanes(vm) {
   return vm.cats
     .map(function (c) {
       return {
         c: c,
-        items: (vm.rootByLane[c.id] || []).slice().sort(function (a, b) {
-          return (a.s.order || 0) - (b.s.order || 0);
-        }),
+        items: byHost(
+          (vm.rootByLane[c.id] || []).slice().sort(function (a, b) {
+            return (a.s.order || 0) - (b.s.order || 0);
+          }),
+        ),
       };
     })
     .filter(function (l) {
       return l.items.length;
     });
+}
+// The external a box runs on, when the map names one that exists.
+function hostOf(x) {
+  var h = x.s.host;
+  return typeof h === "string" && VM.S[h] && h !== x.id ? h : null;
+}
+// Keeps the order, but pulls each host's boxes up beside its first one.
+function byHost(items) {
+  var out = [],
+    done = dict();
+  items.forEach(function (x) {
+    if (done[x.id]) return;
+    var h = hostOf(x);
+    items.forEach(function (y) {
+      if (done[y.id] || (y !== x && (!h || hostOf(y) !== h))) return;
+      done[y.id] = true;
+      out.push(y);
+    });
+  });
+  return out;
 }
 // The box a connection is drawn to: the top-level one that holds `id`.
 function diagramTop(id) {
@@ -1170,14 +1213,20 @@ function layoutDiagram(vm, pos) {
     var cols = Math.max(1, Math.ceil(items.length / rows)),
       tall = 0;
     for (var c = 0; c < cols; c++) {
-      var y = y0;
-      items.slice(c * rows, (c + 1) * rows).forEach(function (it) {
+      var y = y0,
+        col = items.slice(c * rows, (c + 1) * rows);
+      col.forEach(function (it, i) {
         var k = "svc:" + it.id,
-          h = hOf(k, 58);
+          h = hOf(k, 58),
+          host = hostOf(it),
+          prev = i ? hostOf(col[i - 1]) : null;
+        // Room for a host's frame and its name above its first box.
+        if (host !== prev) y += (host ? HOST_T : 0) + (prev ? HOST_PAD : 0);
         pos[k] = { x: x0 + c * (SW + 36), y: y };
         SIZE[k] = { w: SW, h: h };
         y += h + ROW;
       });
+      if (col.length && hostOf(col[col.length - 1])) y += HOST_PAD;
       tall = Math.max(tall, y - y0 - ROW);
     }
     return { w: cols * (SW + 36) - 36, h: tall };
@@ -1234,7 +1283,27 @@ function renderDiagram(vm) {
       "var(--edge)",
     );
   lanes.forEach(function (l) {
-    addZone(keysOf(l), l.c.c.name, String(l.items.length), lvar(l.c.id));
+    // When every column starts inside a host's frame, the lane's own name
+    // needs room above that frame.
+    var rows = l.c.c.external ? DROWS + 2 : DROWS,
+      lead = l.items.every(function (x, i) {
+        return i % rows !== 0 || hostOf(x);
+      });
+    addZone(keysOf(l), l.c.c.name, String(l.items.length), lvar(l.c.id), {
+      top: lead ? HOST_T - 4 : 0,
+    });
+    // A frame round the boxes that run on the same host, named after it.
+    var hosted = dict();
+    l.items.forEach(function (x) {
+      var h = hostOf(x);
+      if (h) (hosted[h] = hosted[h] || []).push("svc:" + x.id);
+    });
+    Object.keys(hosted).forEach(function (h) {
+      addZone(hosted[h], vm.S[h].s.name, vm.S[h].s.tech || "", lvar(l.c.id), {
+        cls: "host",
+        tight: true,
+      });
+    });
     l.items.forEach(function (x) {
       var k = "svc:" + x.id,
         el = svcCard(x, { compact: true });
@@ -1250,14 +1319,23 @@ function renderDiagram(vm) {
   });
   // One arrow per pair of boxes, however many connections run between them.
   var agg = dict();
-  function add(a, b, label, planned, title) {
+  function add(a, b, label, planned, title, isAsync) {
     if (a === b || !cardEls[a] || !cardEls[b]) return;
     var key = a + ">" + b,
       x = agg[key];
-    if (!x) x = agg[key] = { a: a, b: b, labels: [], titles: [], live: false };
+    if (!x)
+      x = agg[key] = {
+        a: a,
+        b: b,
+        labels: [],
+        titles: [],
+        live: false,
+        direct: false,
+      };
     x.labels.push(label || "");
     x.titles.push(title);
     if (!planned) x.live = true;
+    if (!isAsync) x.direct = true;
   }
   vm.actors.forEach(function (a) {
     usesOf(a.p).forEach(function (u) {
@@ -1282,6 +1360,7 @@ function renderDiagram(vm) {
       c.c.label,
       c.c.status === "planned",
       vm.S[a].s.name + " → " + vm.S[b].s.name + ": " + (c.c.label || ""),
+      c.c.async === true,
     );
   });
   Object.keys(agg).forEach(function (key) {
@@ -1296,6 +1375,7 @@ function renderDiagram(vm) {
         : x.labels.length +
           (x.a.indexOf("act:") === 0 ? " uses" : " connections");
     if (!x.live) g.g.classList.add("planned");
+    else if (!x.direct) g.g.classList.add("async");
     var t = document.createElementNS(NS, "title");
     t.textContent = x.titles.join("\n");
     g.g.appendChild(t);
@@ -1935,6 +2015,7 @@ function renderArch() {
     g.label = c.c.label || "";
     if (c.st) g.g.classList.add(c.st);
     if (c.c.status === "planned") g.g.classList.add("planned");
+    else if (c.c.async) g.g.classList.add("async");
     edgeEls.push(g);
   });
 }
@@ -2052,12 +2133,19 @@ function place(only) {
         y1 = Math.max(y1, q.y + z.hFor(k));
       });
       var zp = z.pad || 0;
-      z.box = {
-        x: x0 - PAD - zp,
-        y: y0 - PAD_T - zp,
-        w: x1 - x0 + PAD * 2 + zp * 2,
-        h: y1 - y0 + PAD_T + PAD + zp * 2,
-      };
+      z.box = z.tight
+        ? {
+            x: x0 - HOST_PAD,
+            y: y0 - HOST_T + 4,
+            w: x1 - x0 + HOST_PAD * 2,
+            h: y1 - y0 + HOST_T - 4 + HOST_PAD,
+          }
+        : {
+            x: x0 - PAD - zp,
+            y: y0 - PAD_T - zp - (z.top || 0),
+            w: x1 - x0 + PAD * 2 + zp * 2,
+            h: y1 - y0 + PAD_T + PAD + zp * 2 + (z.top || 0),
+          };
     }
     z.el.style.left = z.box.x + "px";
     z.el.style.top = z.box.y + "px";
@@ -2803,6 +2891,7 @@ function renderChrome() {
   $("personas").hidden = view !== "schema";
   $("bDiagram").setAttribute("aria-pressed", String(diag));
   $("dlegend").hidden = !diag;
+  $("bExport").hidden = !diag;
   var B = VM.B,
     n = checkSummary(),
     tops = VM.services.filter(function (x) {
@@ -3389,6 +3478,38 @@ function openService(id) {
     (s.status ? '<span class="pill">' + esc(s.status) + "</span>" : "") +
     (x.st ? '<span class="pill">' + esc(x.st) + "</span>" : "") +
     "</div>";
+  if (s.tech)
+    b += '<h3>Built with</h3><p class="fact">' + esc(s.tech) + "</p>";
+  if (hostOf(x))
+    b +=
+      '<h3>Runs on</h3><div class="links">' +
+      linkBtn(
+        "service:" + s.host,
+        vm.S[s.host].s.name,
+        vm.S[s.host].s.tech || "",
+        lvar(catOf(s.host)),
+      ) +
+      "</div>";
+  if (Array.isArray(s.options) && s.options.length)
+    b +=
+      '<h3>Still to confirm</h3><p class="fact">Not chosen yet. The options:</p><div class="chips">' +
+      s.options
+        .map(function (o) {
+          return "<span>" + esc(o) + "</span>";
+        })
+        .join("") +
+      "</div>";
+  if (Array.isArray(s.questions) && s.questions.length)
+    b +=
+      "<h3>Open questions · " +
+      s.questions.length +
+      '</h3><ul class="qs">' +
+      s.questions
+        .map(function (q) {
+          return "<li>" + esc(q) + "</li>";
+        })
+        .join("") +
+      "</ul>";
   if (own(DOCS, id)) b += docBlocks(id);
   else b += '<p class="lead">' + esc(s.purpose || "") + "</p>";
   // Parts, docs and history stay off the drawer to keep it short; parts open by drilling into the box.
@@ -4239,6 +4360,7 @@ $("mini").addEventListener("pointerdown", function (ev) {
   window.addEventListener("pointermove", mv);
   window.addEventListener("pointerup", up);
 });
+$("bExport").onclick = exportDiagram;
 $("bEnums").onclick = function () {
   openEnums();
 };
@@ -4248,6 +4370,300 @@ $("bStart").onclick = function () {
 $("startGo").onclick = function () {
   showStart(false);
 };
+
+// ---------- the diagram as a picture: an SVG file drawn from what is on screen,
+// to paste into a document or a slide.
+var SVG_PAINT = [
+  "stroke",
+  "stroke-width",
+  "stroke-dasharray",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "fill",
+  "opacity",
+  "paint-order",
+  "font-family",
+  "font-size",
+  "font-weight",
+];
+function px(v) {
+  return parseFloat(v) || 0;
+}
+function painted(colour) {
+  return !!colour && colour !== "transparent" && !/, 0\)$/.test(colour);
+}
+// A copy of an SVG node with the page's styles written onto it.
+function paintedCopy(node) {
+  var copy = node.cloneNode(false),
+    cs = getComputedStyle(node);
+  if (cs.display === "none" || cs.visibility === "hidden") return null;
+  SVG_PAINT.forEach(function (p) {
+    var v = cs.getPropertyValue(p);
+    if (v) copy.setAttribute(p, v);
+  });
+  copy.removeAttribute("class");
+  Array.prototype.forEach.call(node.childNodes, function (ch) {
+    if (ch.nodeType === 3) copy.appendChild(ch.cloneNode(false));
+    else if (ch.nodeType === 1) {
+      var c = paintedCopy(ch);
+      if (c) copy.appendChild(c);
+    }
+  });
+  return copy;
+}
+// Where `el` sits inside `root`, in the map's own units (zoom doesn't count).
+function insideOf(el, root) {
+  var x = 0,
+    y = 0;
+  while (el && el !== root) {
+    x += el.offsetLeft;
+    y += el.offsetTop;
+    el = el.offsetParent;
+  }
+  return { x: x, y: y };
+}
+// `text` broken into lines no wider than `width`, as the browser wrapped it.
+function wrapText(ctx, text, width) {
+  var lines = [],
+    line = "";
+  text.split(/\s+/).forEach(function (word) {
+    var next = line ? line + " " + word : word;
+    if (line && ctx.measureText(next).width > width + 1) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+// One box or frame as SVG: its outline, then every piece of text and icon in it.
+function boxSvg(el, ctx) {
+  var cs = getComputedStyle(el),
+    x = px(el.style.left),
+    y = px(el.style.top),
+    w = el.offsetWidth,
+    h = el.offsetHeight,
+    bw = px(cs.borderLeftWidth),
+    tw = px(cs.borderTopWidth),
+    // A box drawn with a shadow and no border still needs an edge in a picture.
+    line =
+      !bw && el.classList.contains("card")
+        ? getComputedStyle(document.documentElement)
+            .getPropertyValue("--line")
+            .trim()
+        : "",
+    out = "";
+  out +=
+    '<rect x="' +
+    x +
+    '" y="' +
+    y +
+    '" width="' +
+    w +
+    '" height="' +
+    h +
+    '" rx="' +
+    px(cs.borderTopLeftRadius) +
+    '" fill="' +
+    esc(painted(cs.backgroundColor) ? cs.backgroundColor : "none") +
+    '" stroke="' +
+    esc(bw ? cs.borderLeftColor : line || "none") +
+    '" stroke-width="' +
+    (bw || (line ? 1 : 0)) +
+    '"' +
+    (cs.borderLeftStyle === "dashed"
+      ? ' stroke-dasharray="5 4"'
+      : cs.borderLeftStyle === "dotted"
+        ? ' stroke-dasharray="1.5 3.5" stroke-linecap="round"'
+        : "") +
+    (px(cs.opacity) < 1 ? ' opacity="' + px(cs.opacity) + '"' : "") +
+    "/>";
+  // A box's coloured top edge, when it differs from the rest of its outline.
+  if (tw && cs.borderTopColor !== cs.borderLeftColor)
+    out +=
+      '<rect x="' +
+      x +
+      '" y="' +
+      y +
+      '" width="' +
+      w +
+      '" height="' +
+      tw +
+      '" fill="' +
+      esc(cs.borderTopColor) +
+      '"/>';
+  el.querySelectorAll("*").forEach(function (n) {
+    if (!n.offsetParent && !(n instanceof SVGElement)) return;
+    var at;
+    if (n instanceof SVGSVGElement) {
+      var icon = paintedCopy(n),
+        box = n.parentElement;
+      if (!icon || !box.offsetParent) return;
+      at = insideOf(box, el);
+      icon.setAttribute("x", x + at.x + (box.offsetWidth - px(getComputedStyle(n).width)) / 2);
+      icon.setAttribute("y", y + at.y + (box.offsetHeight - px(getComputedStyle(n).height)) / 2);
+      icon.setAttribute("width", px(getComputedStyle(n).width));
+      icon.setAttribute("height", px(getComputedStyle(n).height));
+      out += new XMLSerializer().serializeToString(icon);
+      return;
+    }
+    if (n instanceof SVGElement) return;
+    var ns = getComputedStyle(n);
+    at = insideOf(n, el);
+    // A tag or badge keeps its own filled shape.
+    if (painted(ns.backgroundColor) && n.offsetWidth < w)
+      out +=
+        '<rect x="' +
+        (x + at.x) +
+        '" y="' +
+        (y + at.y) +
+        '" width="' +
+        n.offsetWidth +
+        '" height="' +
+        n.offsetHeight +
+        '" rx="' +
+        px(ns.borderTopLeftRadius) +
+        '" fill="' +
+        esc(ns.backgroundColor) +
+        '"/>';
+    var text = "";
+    Array.prototype.forEach.call(n.childNodes, function (ch) {
+      if (ch.nodeType === 3) text += ch.nodeValue;
+    });
+    text = text.replace(/\s+/g, " ").trim();
+    if (!text) return;
+    if (ns.textTransform === "uppercase") text = text.toUpperCase();
+    var size = px(ns.fontSize),
+      lh = px(ns.lineHeight) || size * 1.35,
+      padL = px(ns.paddingLeft),
+      inner = n.offsetWidth - padL - px(ns.paddingRight);
+    ctx.font = ns.fontWeight + " " + size + "px " + ns.fontFamily;
+    var inline = ns.display.indexOf("inline") === 0,
+      lines = inline ? [text] : wrapText(ctx, text, inner);
+    lines.forEach(function (line, i) {
+      out +=
+        '<text x="' +
+        (x + at.x + padL) +
+        '" y="' +
+        (y + at.y + px(ns.paddingTop) + lh * i + lh / 2 + size * 0.35) +
+        '" font-family="' +
+        esc(ns.fontFamily) +
+        '" font-size="' +
+        size +
+        '" font-weight="' +
+        esc(ns.fontWeight) +
+        '" fill="' +
+        esc(ns.color) +
+        '"' +
+        (px(ns.letterSpacing)
+          ? ' letter-spacing="' + px(ns.letterSpacing) + '"'
+          : "") +
+        ">" +
+        esc(line) +
+        "</text>";
+    });
+  });
+  return out;
+}
+function diagramSvg() {
+  var ctx = document.createElement("canvas").getContext("2d"),
+    boxes = zoneEls
+      .map(function (z) {
+        return z.el;
+      })
+      .concat(
+        Object.keys(cardEls).map(function (k) {
+          return cardEls[k];
+        }),
+      ),
+    x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity,
+    body = "";
+  boxes.forEach(function (el) {
+    var x = px(el.style.left),
+      y = px(el.style.top);
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x + el.offsetWidth);
+    y1 = Math.max(y1, y + el.offsetHeight);
+    body += boxSvg(el, ctx);
+  });
+  if (!boxes.length) return "";
+  // The arrows go on top, as on screen, at full strength.
+  edgeEls.forEach(function (g) {
+    var copy = paintedCopy(g.g);
+    if (!copy) return;
+    copy.setAttribute("opacity", "0.8");
+    body += new XMLSerializer().serializeToString(copy);
+    try {
+      var b = g.g.getBBox();
+      x0 = Math.min(x0, b.x);
+      y0 = Math.min(y0, b.y);
+      x1 = Math.max(x1, b.x + b.width);
+      y1 = Math.max(y1, b.y + b.height);
+    } catch (e) {
+      /* an arrow that isn't drawn has no box */
+    }
+  });
+  var m = 32,
+    title = (CONFIG.name || "Architecture map") + " · architecture",
+    W0 = x1 - x0 + m * 2,
+    H0 = y1 - y0 + m * 2 + 28;
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' +
+    Math.ceil(W0) +
+    '" height="' +
+    Math.ceil(H0) +
+    '" viewBox="' +
+    [Math.floor(x0 - m), Math.floor(y0 - m - 28), Math.ceil(W0), Math.ceil(H0)].join(" ") +
+    '"><title>' +
+    esc(title) +
+    '</title><rect x="' +
+    Math.floor(x0 - m) +
+    '" y="' +
+    Math.floor(y0 - m - 28) +
+    '" width="' +
+    Math.ceil(W0) +
+    '" height="' +
+    Math.ceil(H0) +
+    '" fill="' +
+    esc(getComputedStyle(document.body).backgroundColor) +
+    '"/><text x="' +
+    (x0 + (x1 - x0) / 2) +
+    '" y="' +
+    (y0 - m - 6) +
+    '" text-anchor="middle" font-family="' +
+    esc(getComputedStyle(document.body).fontFamily) +
+    '" font-size="15" font-weight="600" fill="' +
+    esc(getComputedStyle(document.body).color) +
+    '">' +
+    esc(title) +
+    "</text>" +
+    body +
+    "</svg>"
+  );
+}
+function exportDiagram() {
+  if (!diag) return;
+  var text = diagramSvg();
+  if (!text) return;
+  var a = document.createElement("a"),
+    url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+  a.href = url;
+  a.download =
+    (CONFIG.name || "architecture")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") + "-architecture.svg";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () {
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
 
 // ---------- Start here: the map's README, shown first
 function showStart(on) {

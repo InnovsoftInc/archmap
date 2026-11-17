@@ -64,6 +64,20 @@ const column = (c: Obj): Column => ({
   desc: text(c.desc),
 });
 
+/** What a box shows besides its name; only what the doc says. */
+const box = (d: Doc): Obj => {
+  const out: Obj = {};
+  const tech = text(d.data.tech);
+  const host = text(d.data.host);
+  const options = strings(d.data.options);
+  const questions = strings(d.data.questions);
+  if (tech) out.tech = tech;
+  if (host) out.host = host;
+  if (options.length) out.options = options;
+  if (questions.length) out.questions = questions;
+  return out;
+};
+
 /** An endpoint's parameters or body fields; undefined when it lists none. */
 const fields = (v: unknown): Obj[] | undefined => {
   const out = list(v).map((f) => ({
@@ -129,6 +143,7 @@ export const toViewModel = (
         lane: laneOf(d, lanes),
         type: kind === "job" ? "job" : "app",
         purpose: summaryOf(d),
+        ...box(d),
       };
       list(d.data.endpoints).forEach((e, i) => {
         m.services[`${d.id}.ep-${i}`] = {
@@ -184,6 +199,7 @@ export const toViewModel = (
         lane: laneOf(d, lanes),
         type: "store",
         opens: kind === "database" ? "schema" : undefined,
+        ...box(d),
       };
       for (const t of list(d.data.tables)) {
         const group = text(t.group);
@@ -211,6 +227,7 @@ export const toViewModel = (
         status,
         lane: laneOf(d, lanes),
         type: "external",
+        ...box(d),
       };
     }
     for (const c of list(d.data.connects)) {
@@ -221,6 +238,7 @@ export const toViewModel = (
         label: text(c.why),
         protocol: text(c.how),
         status: text(c.status) ?? "live",
+        async: c.async === true ? true : undefined,
       };
     }
     if (d.folder === "personas")

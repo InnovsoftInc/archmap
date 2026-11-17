@@ -204,6 +204,34 @@ describe("schemaProblems", () => {
     );
   });
 
+  it("checks what a box shows: tech, host, options, questions and async connections", () => {
+    const amplify = doc("external", "amplify", {
+      name: "Amplify",
+      status: "live",
+      kind: "hosting",
+    });
+    const ok = service("api", {
+      tech: "API Gateway + Lambda",
+      host: "amplify",
+      options: ["Lambda", "Fargate"],
+      questions: ["Which region?"],
+      connects: [{ to: "amplify", async: true, evidence: "a.ts" }],
+    });
+    expect(messages([ok, amplify])).toEqual([]);
+    const bad = service("api", {
+      host: "nowhere",
+      options: "Lambda",
+      connects: [{ to: "amplify", async: "yes", evidence: "a.ts" }],
+    });
+    expect(messages([bad, amplify])).toEqual(
+      expect.arrayContaining([
+        'host "nowhere" does not match an external',
+        "options must be a list of strings",
+        "connects[0].async must be a boolean",
+      ]),
+    );
+  });
+
   it("checks env entries: a name, an optional why, and public as a boolean", () => {
     const ok = service("api", {
       env: [{ name: "API_KEY", why: "calls the partner API", public: false }],
@@ -280,7 +308,7 @@ describe("schemaProblems", () => {
   it("checks external kind", () => {
     const d = doc("external", "x", live("X", { kind: "mystery" }));
     expect(messages([d])).toContain(
-      'kind "mystery" must be one of auth, email, payments, ai, hosting, secrets, monitoring, ci, dns, other',
+      'kind "mystery" must be one of auth, email, payments, ai, hosting, secrets, monitoring, ci, distribution, dns, other',
     );
   });
 

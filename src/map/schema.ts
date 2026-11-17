@@ -26,6 +26,8 @@ const connects: Spec = {
     why: opt,
     how: opt,
     status: { t: "enum", values: STATUSES },
+    // Not a direct call: a push, an event, a webhook, a queue. Drawn dotted.
+    async: { t: "bool" },
     evidence: opt,
   },
 };
@@ -49,9 +51,19 @@ const COMMON: Shape = {
   code: { t: "strings" },
 };
 
+// What the diagram shows on a box besides its name: the technology it is built
+// with, the external it runs on, and what is still undecided about it.
+const BOX: Shape = {
+  tech: opt,
+  host: opt,
+  options: { t: "strings" },
+  questions: { t: "strings" },
+};
+
 const SHAPES: Record<Folder, Shape> = {
   services: {
     ...COMMON,
+    ...BOX,
     kind: kind("app", "api", "worker", "job"),
     lane: opt,
     connects,
@@ -92,6 +104,7 @@ const SHAPES: Record<Folder, Shape> = {
   },
   stores: {
     ...COMMON,
+    ...BOX,
     kind: kind("database", "queue", "bucket", "cache"),
     lane: opt,
     connects,
@@ -124,6 +137,7 @@ const SHAPES: Record<Folder, Shape> = {
   },
   external: {
     ...COMMON,
+    ...BOX,
     kind: kind(
       "auth",
       "email",
@@ -133,6 +147,7 @@ const SHAPES: Record<Folder, Shape> = {
       "secrets",
       "monitoring",
       "ci",
+      "distribution",
       "dns",
       "other",
     ),
@@ -243,6 +258,7 @@ const ACTOR: Ref = {
   folders: ["personas", "services"],
   describe: "a persona or service",
 };
+const HOST: Ref = { folders: ["external"], describe: "an external" };
 const PLACE: Ref = {
   folders: ["services", "stores", "external"],
   describe: "a service, store or external",
@@ -311,6 +327,10 @@ export const schemaProblems = (
     list(doc.data.connects).forEach((c, i) => {
       if (isObject(c)) resolve(c.to, PLACE, `connects[${i}].to`);
     });
+    if (doc.folder !== "flows" && doc.folder !== "personas") {
+      resolve(doc.data.host, HOST, "host");
+      if (doc.data.host === doc.id) out.push("host can't be the file itself");
+    }
     if (doc.folder === "flows") {
       resolve(doc.data.persona, PERSONA, "persona");
       list(doc.data.steps).forEach((s, i) => {

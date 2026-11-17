@@ -91,7 +91,16 @@ describe("toViewModel", () => {
         },
         "Handles requests.\n",
       ),
-      doc("services", "web", { name: "Web", status: "live", kind: "app" }),
+      doc("services", "web", {
+        name: "Web",
+        status: "live",
+        kind: "app",
+        tech: "React",
+        host: "amplify",
+        options: ["Next.js", "Remix"],
+        questions: ["Server rendering?"],
+        connects: [{ to: "api", why: "push", async: true }],
+      }),
       doc("services", "cron", { name: "Cron", status: "live", kind: "job" }),
     ]);
     // Only lanes with something in them are drawn.
@@ -104,7 +113,17 @@ describe("toViewModel", () => {
       type: "app",
       purpose: "Handles requests.",
     });
-    expect(m.services.web).toMatchObject({ lane: "frontend", type: "app" });
+    expect(m.services.web).toMatchObject({
+      lane: "frontend",
+      type: "app",
+      tech: "React",
+      host: "amplify",
+      options: ["Next.js", "Remix"],
+      questions: ["Server rendering?"],
+    });
+    expect(m.connections["web-api"]).toMatchObject({ async: true });
+    expect(m.services.api).not.toHaveProperty("tech");
+    expect(m.connections["api-db"]).not.toHaveProperty("async", true);
     expect(m.services.cron).toMatchObject({ lane: "backend", type: "job" });
     expect(m.services["api.ep-0"]).toEqual({
       parent: "api",
