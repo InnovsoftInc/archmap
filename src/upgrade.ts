@@ -127,9 +127,14 @@ export const npxArgs = (version: string): string[] => [
   `github:${HOME_REPO}#v${version}`,
 ];
 
-export const upgradeCommand = (version: string, dir: string, root: string) => {
+/**
+ * The command that upgrades this map. It runs this copy's version, not the
+ * newer one: this copy is the one known to have `upgrade`, and it is `upgrade`
+ * that fetches the newer release.
+ */
+export const upgradeCommand = (dir: string, root: string) => {
   const rel = relative(root, dir) || ".";
-  return `npx ${npxArgs(version).join(" ")}${rel === "architecture" ? "" : ` --dir ${rel}`} upgrade`;
+  return `npx ${npxArgs(VERSION).join(" ")}${rel === "architecture" ? "" : ` --dir ${rel}`} upgrade`;
 };
 
 export const notice = (
@@ -138,7 +143,7 @@ export const notice = (
   dir: string,
   root: string,
 ): string =>
-  `archmap ${next} is available (this map uses ${pinned(config)}). To move to it: ${upgradeCommand(next, dir, root)}`;
+  `archmap ${next} is available (this map uses ${pinned(config)}). To move to it: ${upgradeCommand(dir, root)}`;
 
 /**
  * Moves the map to `latest`: sets the pin in archmap.config.json, then runs

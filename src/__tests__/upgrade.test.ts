@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { HOME_REPO } from "../home.ts";
+import { HOME_REPO, VERSION } from "../home.ts";
 import {
   available,
   highestTag,
@@ -84,8 +84,13 @@ describe("releases", () => {
       available({ name: "x", archmap: "0.4.1", cli: "node a.mjs" }, "0.4.3"),
     ).toBeNull();
     expect(notice({ name: "x", archmap: "0.4.1" }, "0.4.3", dir(), root)).toBe(
-      `archmap 0.4.3 is available (this map uses 0.4.1). To move to it: npx -y github:${HOME_REPO}#v0.4.3 upgrade`,
+      `archmap 0.4.3 is available (this map uses 0.4.1). To move to it: npx -y github:${HOME_REPO}#v${VERSION} upgrade`,
     );
+    // The command runs this copy, which has `upgrade`; a newer release named
+    // in its place might be one from before the command existed.
+    expect(
+      notice({ name: "x", archmap: "0.4.1" }, "9.9.9", join(root, "docs/map"), root),
+    ).toContain(`npx -y github:${HOME_REPO}#v${VERSION} --dir docs/map upgrade`);
   });
 });
 
