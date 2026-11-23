@@ -10,10 +10,10 @@ archmap lives in this repo. Projects don't install it: they run it with `npx -y 
 
 ## Quick start
 
-Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.4.5`:
+Run this once from the project root (Node 24 or newer), with the latest release tag in place of `v0.4.6`:
 
 ```bash
-npx -y github:InnovsoftInc/archmap#v0.4.5 init
+npx -y github:InnovsoftInc/archmap#v0.4.6 init
 ```
 
 `init` creates `architecture/` with `archmap.config.json` (pinned to this version) and a starter `README.md`, and adds an archmap section to `AGENTS.md` (plus `@AGENTS.md` in an existing `CLAUDE.md`). Add `--ci github` or `--ci azure` to write the PR workflow too.
@@ -21,7 +21,7 @@ npx -y github:InnovsoftInc/archmap#v0.4.5 init
 Then ask your agent to run `brief` and follow it:
 
 ```bash
-npx -y github:InnovsoftInc/archmap#v0.4.5 brief
+npx -y github:InnovsoftInc/archmap#v0.4.6 brief
 ```
 
 On an empty map the brief is the setup task, and it starts with questions for you: the agent asks which branch the map should describe (listing the repository's branches), whether pull requests should be checked on GitHub or Azure, whether an agent should update the map on each pull request, and what to call the map. It then starts a branch from the one you chose, runs `init` with your answers, discovers everything in the code, writes the map files, runs `check` until it passes, and asks before opening a pull request. After that the map is updated per pull request. You can also skip `init` and start with `brief --task setup`: the agent runs `init` for you. Nothing is installed or vendored. Projects run archmap through `npx` at the version pinned in `archmap.config.json`, and commit only `architecture/`. To upgrade, change the pinned version.
@@ -63,7 +63,7 @@ A file whose default lane isn't in the list goes to the first lane on the same s
 
 ## Commands
 
-Run them as `npx -y github:InnovsoftInc/archmap#v0.4.5 <command>`, written `archmap` below.
+Run them as `npx -y github:InnovsoftInc/archmap#v0.4.6 <command>`, written `archmap` below.
 
 | Command                                                                | What it does                                                                    |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |

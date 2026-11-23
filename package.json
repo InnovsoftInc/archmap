@@ -1,6 +1,6 @@
 {
   "name": "@tttstudios/archmap",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "An architecture map kept as markdown files in your repo, written and kept current by any AI agent, checked against the code with no AI, and viewable as a static site.",
   "type": "module",
   "bin": {
