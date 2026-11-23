@@ -77,6 +77,13 @@ endpoints:
 
 `personas/` and `external/` files need only the summary.
 
+**Every persona needs a flow.** The diagram draws an arrow from a person to a
+service only where a flow has a step `by` that persona, and a flow has one
+`persona`. So write at least one flow per persona, each with its own steps:
+when staff sign in the same way operators do, that is still a second flow, not
+a sentence in the first one's body. A persona with no flow is drawn
+unconnected, and `check` warns about it.
+
 A complete example, `services/api.md`:
 
 ```markdown

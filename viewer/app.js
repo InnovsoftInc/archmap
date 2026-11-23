@@ -302,9 +302,9 @@ function buildVM() {
   vm.personas.forEach(function (x) {
     vm.PER[x.id] = x;
   });
-  vm.actors = vm.personas.filter(function (x) {
-    return usesOf(x.p).length;
-  });
+  // Everyone the map names is drawn on the overview and the diagram. An arrow
+  // needs a flow step the persona takes; without one they stand unconnected.
+  vm.actors = vm.personas.slice();
   vm.flows = Object.keys(B.flows)
     .map(function (id) {
       return { id: id, f: B.flows[id], st: "" };

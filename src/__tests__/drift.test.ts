@@ -112,3 +112,25 @@ describe("stale entries", () => {
     ]);
   });
 });
+
+describe("personas without a flow", () => {
+  it("warns until a flow has a step by that persona", () => {
+    write(
+      "architecture/personas/staff.md",
+      "---\nname: Staff\nstatus: planned\nneeds: [review permits]\n---\nPeople who review.\n",
+    );
+    const warning = {
+      file: "personas/staff.md",
+      message:
+        "no flow has a step by `staff`, so the map doesn't show what they use. Add a flow with `persona: staff` and steps `by: staff`.",
+    };
+    expect(runCheck(root, dir()).warnings).toContainEqual(warning);
+    write(
+      "architecture/flows/review.md",
+      `---\nname: Review\nstatus: planned\npersona: staff\nsteps:\n  - { by: staff, at: api, does: opens a permit }\n---\n${BODY}`,
+    );
+    const after = runCheck(root, dir());
+    expect(after.errors).toEqual([]);
+    expect(after.warnings).not.toContainEqual(warning);
+  });
+});

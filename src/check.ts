@@ -53,6 +53,31 @@ const secretProblems = (map: LoadedMap): Finding[] => {
   );
 };
 
+/**
+ * Warnings: a persona no flow step is taken by. The viewer still draws them,
+ * but with no arrow, since only a flow says what a persona uses.
+ */
+const personasWithoutFlows = (docs: Doc[]): Finding[] => {
+  const acting = new Set(
+    docs
+      .filter((d) => d.folder === "flows")
+      .flatMap((d) =>
+        (Array.isArray(d.data.steps) ? d.data.steps : []).flatMap(
+          (s: unknown) =>
+            s && typeof s === "object" && "by" in s && typeof s.by === "string"
+              ? [s.by]
+              : [],
+        ),
+      ),
+  );
+  return docs
+    .filter((d) => d.folder === "personas" && !acting.has(d.id))
+    .map((d) => ({
+      file: d.file,
+      message: `no flow has a step by \`${d.id}\`, so the map doesn't show what they use. Add a flow with \`persona: ${d.id}\` and steps \`by: ${d.id}\`.`,
+    }));
+};
+
 const mapBefore = (root: string, dir: string, base: string): Doc[] => {
   try {
     return mapAt(root, dir, forkPoint(root, resolveBase(root, base)));
@@ -97,6 +122,7 @@ export const runCheck = (
     ...plannedWithEvidence(root, map.docs),
     ...(opts.base ? staleEntries(root, dir, opts.base, map.docs, before) : []),
     ...undocumented(map.docs),
+    ...personasWithoutFlows(map.docs),
   ];
   return { errors, warnings, leads, map };
 };
